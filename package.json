@@ -1,0 +1,26 @@
+{
+  "name": "local-pos",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Material 3 Web POS with UPI QR, thermal receipts, customer tracking and a Raspberry Pi customer display; all data stored locally",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "express": "^4.19.2",
+    "jsqr": "^1.4.0",
+    "pino": "^9.3.2",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.4",
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "allowScripts": {
+    "protobufjs@7.6.6": true,
+    "@whiskeysockets/baileys@7.0.0-rc14": true
+  }
+}

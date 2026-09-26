@@ -1,0 +1,25 @@
+/* Thermal receipt printing (58mm / 80mm). Loaded with media="print".
+   receipt-dialog.js injects the matching @page size and clones the receipt into #print-root. */
+@media print {
+  html, body { height: auto; margin: 0; padding: 0; background: #fff !important; }
+
+  /* hide the whole app while printing a receipt */
+  body.printing #app,
+  body.printing dialog,
+  body.printing .scrim,
+  body.printing #snackbar { display: none !important; }
+  body.printing #print-root { display: block !important; }
+
+  /* printable width: 80mm paper -> 72mm, 58mm paper -> 48mm */
+  #print-root .rc { width: 72mm; margin: 0 auto; padding: 2mm 0 6mm; background: #fff; color: #000;
+    font: 12px/1.35 'Courier New', ui-monospace, monospace; }
+  body[data-paper="58"] #print-root .rc { width: 48mm; font-size: 10px; }
+
+  /* monochrome, high contrast */
+  #print-root, #print-root * { color: #000 !important; background: transparent !important; box-shadow: none !important; }
+  #print-root .rc-hr { border-top: 1px dashed #000; }
+  #print-root img { filter: grayscale(1) contrast(1.6); image-rendering: pixelated; }
+
+  /* avoid breaking a line item across pages on long bills */
+  #print-root .rc-row, #print-root .rc-item { break-inside: avoid; }
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Customer display</title>
+  <script>
+    document.documentElement.dataset.theme =
+      localStorage.getItem('m3pos.theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <link rel="stylesheet" href="css/m3.css">
+  <style>
+    body { cursor: none; overflow: hidden; }
+    #stage { display: grid; place-items: center; height: 100vh; padding: 24px; text-align: center; }
+    .d-wrap { display: grid; justify-items: center; gap: 12px; }
+    .d-amount { font: 500 clamp(48px, 12vw, 96px)/1.05 var(--md-font); color: var(--md-primary); }
+    .d-qr { padding: 16px; border-radius: var(--md-shape-xl); background: #fff; }
+    .d-qr img { display: block; width: min(52vh, 70vw); height: auto; image-rendering: pixelated; }
+    .d-icon { font-size: 96px; color: var(--md-primary); }
+    .d-icon.material-symbols-rounded { font-size: 96px; }
+  </style>
+</head>
+<body>
+  <main id="stage"></main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script type="module" src="js/display.js"></script>
+</body>
+</html>
