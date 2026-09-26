@@ -41,6 +41,18 @@ npm start            # http://localhost:3000
 
 First launch shows the **Setup wizard**. After saving you land on the POS dashboard; the gear icon in the top bar reopens the same form.
 
+### Tests
+
+```bash
+npm test               # the API and image-pipeline suites
+npm run test:ui        # the deliveries dialog in a real browser (needs Chrome)
+```
+
+Every test runs against a throwaway copy of `data/` on its own port, with `POS_NO_WHATSAPP=1` and
+the WhatsApp session deliberately left out, so a test can never touch the shop's real bills or text a
+real customer. Chrome is only needed for `test:ui`; point `CHROME_BIN` at it if it is not at
+`/usr/bin/google-chrome`.
+
 ## Structure
 
 ```
@@ -85,6 +97,7 @@ No cloud database is used. Everything is saved in the `data/` folder next to `se
 | `orders.jsonl` | every paid bill, one per line (append-only) |
 | `counters.json` | today's bill counter, so two phones never issue the same number |
 | `uploads/` | product photos |
+| `delivery-photos/` | handover photos, kept as evidence (see [Home delivery](#home-delivery-from-a-whatsapp-order)) |
 | `wa-orders.json` | orders received over WhatsApp, pending/accepted/dismissed |
 | `wa-counters.json` | today's WhatsApp order-code counter (kept separate from the bill counter) |
 | `whatsapp-session/` | WhatsApp login — present only once WhatsApp is set up (see below); treat it like a password |
@@ -95,6 +108,9 @@ No cloud database is used. Everything is saved in the `data/` folder next to `se
 - `customers.json` and `orders.jsonl` contain customers' names and phone numbers. Keep backups private and keep the server on the shop LAN.
 - There is no login yet: anyone who can open the POS address can read the products, customers and bills and can change the settings. Do not expose port 3000 to the internet.
 - Bill numbers roll over at midnight in India time (`Asia/Kolkata`). Set `POS_TZ` to change that.
+- Set `POS_NO_WHATSAPP=1` to start the till with WhatsApp switched off. The POS works normally and
+  messages are simply recorded as failed. The test suites use it so a test run can never bring the
+  shop's real WhatsApp account online and text real customers from a synthetic bill.
 
 ## Customers
 
@@ -324,6 +340,29 @@ the items at handover. A determined customer can also read the code out over the
 the QR before the boy arrives, which defeats the check; that is a limit of any secret the customer
 holds. And if a photo is too blurry or too compressed to read, that is what the 4-digit code is
 there for.
+
+**Handover photos (proof of delivery).** The 4-digit code is a complete confirmation and always has
+been: type it at the till, or send it from the delivery boy's phone, and the bill is closed. A photo
+is kept as well when one is available, and the two routes both work:
+
+- **The delivery boy sends a photo of the customer's QR code.** The very picture he sent is stored
+  against the bill, so a customer who later says nothing arrived has something to point at. It is
+  shrunk to 1280px and re-encoded as JPEG — an 18 MB phone photo ends up around 250 KB — and the
+  EXIF block is dropped, because a phone photo taken at a customer's door records the GPS position
+  of their home.
+- **The cashier attaches one at the till.** The **Photo** button next to the code box opens the
+  camera. It is optional; the code alone is enough, and nobody is stopped from closing a real
+  handover because a camera would not cooperate.
+- Photos live in their own `delivery-photos/` folder, never in `uploads/`, so the product-photo
+  cleanup can never delete evidence. The file type is decided by the bytes, not by the filename, and
+  the name is built by the server.
+- **Recently delivered** sits under the live list. A delivery with a photo shows a thumbnail that
+  opens full size; one closed by code alone shows a dashed **no photo** marker, so a dispute is
+  obvious rather than hidden.
+
+**The customer is told who is bringing the order.** The "out for delivery" message names the boy and
+gives his number, and the delivered and replacement-code messages name him too — so the customer
+knows who to expect, and can say who handed it over if something is wrong.
 
 **Welcome message:** the first time a phone number is saved as a customer (i.e. the first bill
 with that number), a short welcome message is sent automatically, if WhatsApp is connected at that

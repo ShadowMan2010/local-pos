@@ -489,6 +489,18 @@ dialog.m3-dialog::backdrop { background: rgb(0 0 0 / .32); }
   font: 500 18px/24px var(--md-font); letter-spacing: 4px; text-align: center; }
 .code-input:focus { box-shadow: inset 0 0 0 2px var(--md-primary); }
 .code-row .btn { flex: none; }
+/* The real file input is only ever opened by the Photo button, so it stays in the DOM to hold the
+   chosen file and to keep keyboard focus order sane, but it is never shown itself. */
+.proof-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Evidence of a finished handover, shown on the recent list so a delivery closed by code alone is
+   visibly distinct from one that came with a picture. */
+.proof-thumb { width: 34px; height: 34px; border-radius: var(--md-shape-sm); object-fit: cover;
+  border: 1px solid var(--md-outline-variant); background: var(--md-surface-container-highest); }
+.proof-none { width: 34px; height: 34px; border-radius: var(--md-shape-sm); flex: none;
+  display: grid; place-items: center; font-size: 11px; text-align: center; line-height: 1.1;
+  color: var(--md-on-surface-variant); background: var(--md-surface-container-highest);
+  border: 1px dashed var(--md-outline-variant); }
 
 /* delivery boys in Settings */
 .boy-list { margin: 0; padding: 0; list-style: none; }

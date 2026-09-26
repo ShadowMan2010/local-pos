@@ -137,27 +137,63 @@ export async function startWhatsApp(ctx) {
     });
   }
 
-  /**
-   * Pulls a delivery token out of a photo the delivery boy sent. WhatsApp hands the picture over
-   * already decrypted, so this is just decode-and-match. Never throws: a photo we cannot read is an
-   * ordinary outcome (blurry shot, screenshot of the wrong thing, a sticker), and it must not be
-   * able to disturb the rest of the message loop.
-   * @returns {Promise<string|null>} the decoded text, or null if there is no readable QR
-   */
-  async function readQrFromMessage(msg) {
-    if (!msg?.message?.imageMessage) return null;
-    try {
-      const buf = await downloadMediaMessage(msg, 'buffer', {});
+    /**
+     * Fetches the picture the delivery boy sent. WhatsApp hands it over already decrypted, so this is
+     * just a download. Never throws: a photo we cannot fetch is an ordinary outcome and must not be
+     * able to disturb the rest of the message loop.
+     * @returns {Promise<Buffer|null>}
+     */
+    async function downloadPhoto(msg) {
+      if (!msg?.message?.imageMessage) return null;
+      try {
+        const buf = await downloadMediaMessage(msg, 'buffer', {});
+        return buf?.length ? buf : null;
+      } catch (err) {
+        console.error('Could not download that photo:', err.message);
+        return null;
+      }
+    }
+
+    /**
+     * Turns a delivered parcel photo into something worth keeping for years: shrunk to a sensible
+     * size and re-encoded as JPEG, so a modern phone's 5 MB picture does not fill the disk after a
+     * few hundred deliveries. Re-encoding also strips EXIF, which on a phone photo carries the GPS
+     * coordinates of the customer's home — not something to keep next to a delivery record.
+     * @returns {Promise<Buffer|null>}
+     */
+    async function prepareProofPhoto(buf) {
       if (!buf?.length) return null;
-      // Cap the size: a full-resolution phone photo is far more pixels than a QR needs, and
-      // scanning is slow on a big buffer. Fitting it inside this box keeps a small QR readable
-      // while dropping a huge one to something sane.
-      //
-      // jsQR insists on exactly 4 bytes per pixel and THROWS otherwise, so the pixels must be
-      // RGBA here. Do not "optimise" this into greyscale: jsQR does its own luminance conversion
-      // internally, and greyscale hands it 1 byte per pixel, which makes every photo unreadable.
-      const { data, info } = await sharp(buf)
-        .rotate() // honour the photo's EXIF orientation before scanning
+      try {
+        return await sharp(buf)
+          .rotate() // honour the phone's EXIF orientation before resizing, or the shot lands sideways
+          .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
+      } catch (err) {
+        console.error('Could not prepare that photo as proof:', err.message);
+        return null;
+      }
+    }
+
+    /**
+     * Pulls a delivery token out of a photo the delivery boy sent. Never throws: a photo we cannot
+     * read is an ordinary outcome (blurry shot, screenshot of the wrong thing, a sticker), and it
+     * must not be able to disturb the rest of the message loop.
+     * @returns {Promise<string|null>} the decoded text, or null if there is no readable QR
+     */
+    async function readQrFromBuffer(buf) {
+      if (!buf?.length) return null;
+      try {
+        // Cap the size: a full-resolution phone photo is far more pixels than a QR needs, and
+        // scanning is slow on a big buffer. Fitting it inside this box keeps a small QR readable
+        // while dropping a huge one to something sane.
+        //
+        // jsQR insists on exactly 4 bytes per pixel and THROWS otherwise, so the pixels must be
+        // RGBA here. Do not "optimise" this into greyscale: jsQR does its own luminance conversion
+        // internally, and greyscale hands it 1 byte per pixel, which makes every photo unreadable.
+        const { data, info } = await sharp(buf)
+          .rotate() // honour the photo's EXIF orientation before scanning
+
         .resize({ width: 1400, height: 1400, fit: 'inside', withoutEnlargement: true })
         .flatten({ background: '#ffffff' }) // drop alpha; a transparent QR would scan as nothing
         .toColourspace('srgb')
@@ -220,11 +256,16 @@ export async function startWhatsApp(ctx) {
       // A photo can only ever be a delivery QR from him, so the order flow never sees it. There are
       // two of them and he sends both to the same place: the sticker on the parcel (collected at the
       // shop) and the customer's own code (handed over at the door). The server works out which.
-      if (msg?.message?.imageMessage) {
-        const token = await readQrFromMessage(msg);
-        if (!token) return reply(jid, buildDeliveryNoQrText());
-        return reply(jid, await ctx.confirmScanByQr(token, phone));
-      }
+        if (msg?.message?.imageMessage) {
+          // Downloaded once and used twice: the QR decides which job this is, and the same picture
+          // is the proof of the handover. Downloading it separately for each would double the wait
+          // on a phone connection and could fail one half of the pair.
+          const photo = await downloadPhoto(msg);
+          const token = photo ? await readQrFromBuffer(photo) : null;
+          if (!token) return reply(jid, buildDeliveryNoQrText());
+          return reply(jid, await ctx.confirmScanByQr(token, phone, await prepareProofPhoto(photo)));
+        }
+
       const code = readDeliveryCode(lower);
       if (code) return reply(jid, ctx.confirmDeliveryByCode(code, phone));
       return reply(jid, buildDeliveryBoyHelpText());

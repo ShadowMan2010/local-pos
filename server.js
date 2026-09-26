@@ -31,12 +31,18 @@ const CUSTOMERS_FILE = path.join(DATA_DIR, 'customers.json');
 const COUNTERS_FILE = path.join(DATA_DIR, 'counters.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.jsonl');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
+// Delivery proofs get their own folder on purpose. A handover photo is evidence and may show a
+// customer's home, so it must never share a namespace with product photos: the product-photo
+// cleanup endpoint deletes by name in uploads/, and a proof file has no business being reachable
+// from there.
+const PROOF_DIR = path.join(DATA_DIR, 'delivery-photos');
 const PORT = process.env.PORT || 3000;
 const TZ = process.env.POS_TZ || 'Asia/Kolkata';                                    // bill numbers roll over at local midnight
 const FIRESTORE = process.env.FIRESTORE_ENDPOINT || 'https://firestore.googleapis.com'; // only used by the one-time import
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(PROOF_DIR, { recursive: true });
 
 /* ---------- tiny file database ---------- */
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -570,7 +576,34 @@ app.get('/api/deliveries', (_req, res) => {
       // the code itself is not sent to the list: the delivery boy types what the customer says
       items: o.items.map((it) => ({ name: it.name, qty: it.qty, weightKg: it.weightKg, isWeight: it.isWeight }))
     }));
-  res.json({ deliveries: out });
+  // Delivered jobs leave the list above, which used to mean a stored handover photo had nowhere to
+  // be seen. The most recent ones are kept here so a disputed delivery can actually be checked.
+  // Still no code and no token: those are the secrets that close a job, and this list is not the
+  // place to confirm anything.
+  const recentDelivered = [...orders.values()]
+    .filter((o) => o.delivery?.status === 'delivered')
+    .sort((a, b) => String(b.delivery.deliveredAt || '').localeCompare(String(a.delivery.deliveredAt || '')))
+    .slice(0, 25)
+    .map((o) => ({
+      id: o.id,
+      status: 'delivered',
+      customer: o.customer,
+      total: o.total,
+      itemCount: o.items.reduce((s, it) => s + (it.isWeight ? 1 : it.qty), 0),
+      packedAt: o.delivery.packedAt,
+      outAt: o.delivery.outAt,
+      deliveredAt: o.delivery.deliveredAt,
+      pickedUpBy: o.delivery.pickedUpBy || null,
+      boy: o.delivery.boy || null,
+      confirmedBy: o.delivery.confirmedBy || null,
+      // A delivered order with no photo is a real possibility for bills that predate this feature,
+      // and for a handover closed by typing the 4-digit code. It is shown as such, not hidden.
+      ...proofFields(o),
+      notified: o.delivery.notified !== false,
+      jobSent: o.delivery.jobSent !== false,
+      items: o.items.map((it) => ({ name: it.name, qty: it.qty, weightKg: it.weightKg, isWeight: it.isWeight }))
+    }));
+  res.json({ deliveries: out, recentDelivered });
 });
 
 /**
@@ -655,10 +688,14 @@ app.post('/api/orders/:id/deliver', (req, res) => {
 
   // Same completion path the bot uses, so a bill closed by hand and one closed from WhatsApp end up
   // recorded and messaged identically. Only the recorded name differs: here we know who typed it.
-  completeDelivery(o, String(req.body?.by || 'delivery').slice(0, 40));
+  // The 4-digit code is what closes the delivery. A photo is attached when the till is given one,
+  // but is not required, so closing a handover never depends on a camera working.
+  const photo = proofUrlIsReal(req.body?.photo);
+  if (req.body?.photo && !photo) return bad(res, 'That photo could not be used. Send a JPG, PNG or WebP, or clear it and confirm with the code alone.');
+  completeDelivery(o, String(req.body?.by || 'delivery').slice(0, 40), photo ? { url: photo, via: 'till' } : null);
   // The token is echoed nowhere: it is a bearer secret for the customer's QR, and a response is
   // somewhere it could end up in a log or a browser history for no benefit.
-  res.json({ ok: true, order: { id: o.id, delivery: { code: o.delivery.code, status: o.delivery.status, deliveredAt: o.delivery.deliveredAt, confirmedBy: o.delivery.confirmedBy } } });
+  res.json({ ok: true, order: { id: o.id, delivery: { code: o.delivery.code, status: o.delivery.status, deliveredAt: o.delivery.deliveredAt, confirmedBy: o.delivery.confirmedBy, ...proofFields(o) } } });
 });
 
 /** Re-sends the messages for a bill, whichever stage it is at. For when the first attempt didn't reach anyone. */
@@ -704,9 +741,10 @@ app.post('/api/orders/:id/new-code', async (req, res) => {
     boyName: o.delivery.boy?.name, boyPhone: o.delivery.boy?.phone
   }).catch((err) => { console.error('New code QR message failed:', err.message); return false; }) === true;
   if (!o.delivery.notified) {
-    o.delivery.notified = await wa?.sendText(o.customer?.phone, buildNewCodeText(store, {
-      code: o.delivery.code, orderId: o.id
-    })).catch((err) => { console.error('New code message failed:', err.message); return false; }) === true;
+      o.delivery.notified = await wa?.sendText(o.customer?.phone, buildNewCodeText(store, {
+        code: o.delivery.code, orderId: o.id, boyName: o.delivery.boy?.name
+      })).catch((err) => { console.error('New code message failed:', err.message); return false; }) === true;
+
   }
   fs.appendFileSync(ORDERS_FILE, `${JSON.stringify(o)}\n`, { mode: 0o600 });
   orders.set(o.id, o);
@@ -750,7 +788,7 @@ function confirmPickupByQr(token, byPhone) {
   );
 }
 
-function confirmDeliveryByQr(token, byPhone) {
+function confirmDeliveryByQr(token, byPhone, photoBuf) {
   const o = findDeliveryByToken(token);
   if (!o) return buildDeliveryBadQrText();
   if (o.delivery.status === 'delivered') {
@@ -761,7 +799,12 @@ function confirmDeliveryByQr(token, byPhone) {
   // picked up — and the customer would have been told nothing was moving.
   if (o.delivery.status !== 'out') return buildNotPickedUpText(o.id);
   if (byPhone) clearBadCodes(byPhone);
-  return completeDelivery(o, o.delivery.boy?.name);
+  // He photographed the customer's code, so the picture is the proof and is stored with the bill.
+  // Saving is best-effort: a delivery that really happened is never refused because a file could
+  // not be written, and the bill is recorded without a photo so the gap stays visible.
+  const url = photoBuf ? saveProofPhoto(photoBuf, o.id) : null;
+  if (photoBuf && !url) console.error(`Could not store the handover photo for ${o.id}; recorded without one`);
+  return completeDelivery(o, o.delivery.boy?.name, url ? { url, via: 'whatsapp' } : null);
 }
 
 /** Called by the bot when a delivery boy sends a code from his own WhatsApp. */
@@ -873,17 +916,73 @@ function clearBadCodes(phone) {
  * Closes a delivery and tells the customer. Shared by the code path and the QR path so the two
  * can't drift apart in what they record or what the customer is told.
  */
-function completeDelivery(o, by) {
-  o.delivery.status = 'delivered';
-  o.delivery.deliveredAt = new Date().toISOString();
+/**
+ * Writes a handover photo and returns the URL to record on the bill.
+ *
+ * The file type comes from the bytes, never from a filename or a client-declared type, and the name
+ * is built here rather than taken from the request — so a caller cannot choose where the file lands
+ * or what it is called. Returns null for anything that is not a real JPG/PNG/WebP, which the callers
+ * treat as "no photo", never as a delivered order.
+ */
+function saveProofPhoto(buf, orderId) {
+  const ext = Buffer.isBuffer(buf) ? imageExt(buf) : null;
+  if (!ext) return null;
+  const bill = /^INV-\d{6}-\d{4,}$/.test(String(orderId || '')) ? orderId : 'unknown';
+  const name = `${bill}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+  fs.writeFileSync(path.join(PROOF_DIR, name), buf);
+  return `/delivery-photos/${name}`;
+}
+
+// A photo URL arriving from a client is only ever believed if it looks like one this server issued
+// and the file is really there. The name pattern admits no "/" and no "..", so joining it onto
+// PROOF_DIR cannot escape the folder.
+function proofUrlIsReal(url) {
+  const s = String(url || '');
+  const prefix = '/delivery-photos/';
+  if (!s.startsWith(prefix)) return null;
+  const name = s.slice(prefix.length);
+  if (!/^INV-\d{6}-\d{4,}-\d+-[\da-f]{8}\.(jpg|png|webp)$/.test(name)) return null;
+  return fs.existsSync(path.join(PROOF_DIR, name)) ? s : null;
+}
+
+/**
+ * What a client is given about a stored handover photo. On the bill it is kept as a record
+ * ({url, at, by, via}), but on the wire `proofPhoto` is only ever the URL string, with the
+ * bookkeeping in fields of its own. A field called proofPhoto that is sometimes a string and
+ * sometimes an object is a trap: the first version of the deliveries dialog used it straight as an
+ * <img src> and rendered "[object Object]".
+ */
+function proofFields(o) {
+  const p = o.delivery?.proofPhoto;
+  return {
+    proofPhoto: p?.url || null,
+    proofPhotoAt: p?.at || null,
+    proofPhotoVia: p?.via || null
+  };
+}
+
+  function completeDelivery(o, by, proof) {
+    o.delivery.status = 'delivered';
+    o.delivery.deliveredAt = new Date().toISOString();
   o.delivery.confirmedBy = by || o.delivery.boy?.name || 'delivery';
+  // The photo is the proof of handover, so it goes on before the bill is written. It is optional:
+  // a delivery closed by typing the 4-digit code has no picture, and that is recorded honestly
+  // rather than being treated as a failure.
+  if (proof?.url) {
+    o.delivery.proofPhoto = { url: proof.url, at: o.delivery.deliveredAt, by: o.delivery.confirmedBy, via: proof.via || 'unknown' };
+  }
   fs.appendFileSync(ORDERS_FILE, `${JSON.stringify(o)}\n`, { mode: 0o600 });
   orders.set(o.id, o);
+
   const phone = o.customer?.phone;
   if (phone) {
-    wa?.sendText(phone, buildDeliveredText(readConfig()?.storeName || 'The shop', { orderId: o.id }))
-      .catch((err) => console.error('Delivery confirmation message failed:', err.message));
+    // The customer is told who handed the order over: the boy assigned to the run, and failing
+    // that whoever actually confirmed it, so the name is never blank while the bill records one.
+    wa?.sendText(phone, buildDeliveredText(readConfig()?.storeName || 'The shop', {
+      orderId: o.id, boyName: o.delivery.boy?.name || o.delivery.confirmedBy
+    })).catch((err) => console.error('Delivery confirmation message failed:', err.message));
   }
+
   return buildDeliveryOkText(o.id);
 }
 
@@ -902,6 +1001,10 @@ function confirmDeliveryByCode(code, byPhone) {
   }
   if (o.delivery.status !== 'out') return buildNotPickedUpText(o.id);
   if (byPhone) clearBadCodes(byPhone);
+  // The 4-digit code is a complete confirmation in its own right and always has been — the boy
+  // reads it out at the door, and that is the proof the shop relies on. A photo is kept as well
+  // when one is sent, but its absence must never be a reason to refuse a delivery that really
+  // happened; the bill is simply recorded without a photo and the list shows that.
   return completeDelivery(o, o.delivery.boy?.name);
 }
 
@@ -1059,6 +1162,37 @@ app.delete('/api/upload/:name', (req, res) => {
   fs.rm(path.join(UPLOAD_DIR, name), { force: true }, () => res.json({ ok: true }));
 });
 
+/* ---------- delivery proof photos ---------- */
+app.use('/delivery-photos', express.static(PROOF_DIR, { maxAge: '30d', immutable: true }));
+
+// Separate from the product-photo upload on purpose: a proof is tied to one bill, it may show a
+// customer's home, and it must not be deletable through the product-photo endpoint.
+// The raw body parser runs before the route handler, so an over-sized photo never reaches the checks
+// inside the handler — it throws on the way in. Left alone that surfaces as a 500 with a stack trace
+// in the log, which looks like a server fault when it is really just a big photo. Turn it into the
+// same clear 413 instead.
+const photoUpload = express.raw({ type: () => true, limit: '4mb' });
+const readPhotoBody = (req, res, next) => photoUpload(req, res, (err) => {
+  if (!err) return next();
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    return bad(res, 'That photo is over the 4 MB limit. Send a smaller one, or confirm with the code alone.', 413);
+  }
+  next(err);
+});
+
+app.post('/api/orders/:id/delivery-photo', readPhotoBody, (req, res) => {
+  const o = orders.get(req.params.id);
+  if (!o) return bad(res, 'No such bill');
+  if (!o.delivery) return bad(res, 'This bill is not a delivery');
+  if (o.delivery.status === 'delivered') return bad(res, 'That order is already delivered');
+  // A photo is only worth keeping if it can be attached, so an order that is still sitting in the
+  // shop is refused rather than accumulating handover shots nobody will ever use.
+  if (o.delivery.status !== 'out') return bad(res, 'The delivery boy has not collected this parcel yet');
+  const url = saveProofPhoto(req.body, o.id);
+  if (!url) return bad(res, 'Send a JPG, PNG or WebP photo (max 4 MB)');
+  res.json({ url });
+});
+
 /* ---------- customer display hub ---------- */
 // CORS so the POS can also POST straight to a Pi running its own copy of this server
 app.use('/api/display', (req, res, next) => {
@@ -1163,9 +1297,18 @@ app.post('/api/whatsapp/orders/:code/dismiss', (req, res) => {
   res.json({ ok: true });
 });
 
-// Starts in the background; if @whiskeysockets/baileys isn't installed yet, the rest of the POS
-// still runs normally — this just means WhatsApp features stay off until "npm install" is run.
-(async () => {
+  // Starts in the background; if @whiskeysockets/baileys isn't installed yet, the rest of the POS
+  // still runs normally — this just means WhatsApp features stay off until "npm install" is run.
+  //
+  // POS_NO_WHATSAPP=1 keeps the socket from ever starting. Tests need this: they run against a
+  // throwaway copy of the data dir, and that copy includes whatsapp-session/, so without the switch
+  // a test brings the shop's real WhatsApp account online and can text real customers from a
+  // synthetic bill. Every test sets it.
+  if (process.env.POS_NO_WHATSAPP === '1') {
+    console.log('WhatsApp is off (POS_NO_WHATSAPP=1) — the till works, messages are recorded as failed.');
+  } else {
+  (async () => {
+
   try {
     const { startWhatsApp } = await import('./whatsapp.js');
     wa = await startWhatsApp({
@@ -1192,11 +1335,16 @@ app.post('/api/whatsapp/orders/:code/dismiss', (req, res) => {
       confirmDeliveryByQr,
       // A delivery boy's photo could be either QR, so the server decides which one it is and does the
       // right thing: the sticker on the parcel means he is collecting it, the customer's own means
-      // the goods have reached them.
-      confirmScanByQr: async (token, byPhone) => (
+      // the goods have reached them. Only the second one is a handover, so only that one carries
+      // the photo through as proof.
+      //
+      // The picture travels as a buffer, not a saved URL, on purpose: which bill it belongs to is
+      // only known once the QR inside it has been decoded and matched, so the server stores it
+      // itself rather than being handed a path for a bill it has not identified yet.
+      confirmScanByQr: async (token, byPhone, photoBuf) => (
         findDeliveryByPickupToken(token)
           ? await confirmPickupByQr(token, byPhone)
-          : confirmDeliveryByQr(token, byPhone)
+          : confirmDeliveryByQr(token, byPhone, photoBuf)
       ),
       declineDelivery
     });
@@ -1207,6 +1355,7 @@ app.post('/api/whatsapp/orders/:code/dismiss', (req, res) => {
       : `WhatsApp feature not started: ${err.message}`);
   }
 })();
+  }
 
 // any error inside an /api route comes back as JSON, never as an HTML error page
 app.use((err, _req, res, _next) => {

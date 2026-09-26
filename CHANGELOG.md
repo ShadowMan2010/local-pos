@@ -4,6 +4,66 @@ All notable changes to LOCAL POS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Handover photos
+
+- The **4-digit code is unchanged and still completes a delivery on its own.** A photo is
+  evidence, not a condition: a delivery that really happened is never refused because a
+  camera would not cooperate, and a bill closed by code is recorded honestly as having
+  no picture.
+- When the delivery boy sends a photo of the customer's QR, that same picture is stored
+  against the bill. The image is downloaded once and used for both the scan and the
+  evidence, so a slow phone connection is not paid for twice.
+- Stored copies are shrunk to 1280px and re-encoded as JPEG (an 18 MB photo becomes
+  around 250 KB) and the EXIF block is dropped — a photo taken at a customer's door
+  otherwise records the GPS position of their home.
+- The till's delivery dialog has an optional **Photo** button that opens the camera. The
+  photo is uploaded first and the code confirmed after, so a wrong code cannot leave a
+  half-finished handover.
+- Photos live in their own `delivery-photos/` folder, never `uploads/`, so the
+  product-photo cleanup can never delete evidence. The file type comes from the bytes and
+  the filename is built by the server; an off-server or path-traversing URL is refused.
+- **Recently delivered** appears under the live list, with a thumbnail for a photographed
+  handover and a dashed "no photo" marker for a code-only one.
+- **Fixed:** an over-sized photo produced a 500 with a stack trace, because the body
+  parser throws before the route handler runs. It is now a clear 413.
+
+### Customers are told who is bringing the order
+
+- The "out for delivery" message already named the boy; the **delivered** and
+  **replacement-code** messages now name him too, so a customer can say who handed the
+  order over if something is wrong. A bill with no boy recorded is left unchanged rather
+  than printing "undefined".
+
+### Cost prices and profit
+
+- Per-product cost prices, editable from the product dialog. An unknown cost is `null`,
+  not `0`, so it is never silently counted as free stock.
+- Cost is snapshotted on the bill at the moment of sale, so a later price change cannot
+  rewrite past profit.
+- Daily summary and reports show cost, profit and margin. **Profit stays hidden unless
+  every sold line is costed** — a margin computed from part-known costs is worse than none.
+
+### Reports and CSV export
+
+- `Reports` in the top bar: any date range (default last 7 days), what sold, day-by-day
+  trend, and CSV download of orders, products and days.
+- Days are bucketed in shop-local time (`POS_TZ`), not UTC, so a late-night bill lands on
+  the right day.
+- CSVs are RFC 4180 quoted, written with a UTF-8 BOM so Excel opens Bengali and ₹ correctly,
+  and any cell starting `=`, `+`, `-` or `@` is prefixed so a product name cannot become a
+  formula.
+
+### Testing
+
+- `npm test` runs the API and image-pipeline suites; `npm run test:ui` drives the
+  deliveries dialog in a real browser.
+- **Added `POS_NO_WHATSAPP=1`.** The suites run against a throwaway copy of `data/`, and
+  that copy used to include `whatsapp-session/` — so a test could bring the shop's real
+  WhatsApp account online and text real customers from a synthetic bill. The switch exists
+  so that cannot happen, and the tests now set it and never copy the session.
+
 ## [0.2.0] — first packaged release
 
 The first release with a downloadable package. Covers everything built while

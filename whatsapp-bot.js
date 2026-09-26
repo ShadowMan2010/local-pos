@@ -255,10 +255,16 @@ export const buildDeliveryBoyNothingToDeclineText = () =>
 export const buildDeliveryDeclinedText = (storeName, orderId) =>
   `👍 Job *${orderId}* handed back to ${storeName}. They will give it to another delivery boy. Thank you!`;
 
-/** Sent once the delivery boy has entered the code, so the customer has a receipt of the fact. */
+/**
+ * Sent once the delivery boy has entered the code, so the customer has a receipt of the fact. It
+ * names him too: if anything is wrong with the order the customer can say who handed it over, which
+ * is the first thing the shop would otherwise have to ask.
+ * @param {{orderId:string, boyName?:string}} d
+ */
 export function buildDeliveredText(storeName, d) {
   return [
     `✅ ${storeName} — your order (${d.orderId}) has been delivered.`,
+    ...(d.boyName ? ['', `Delivered by *${d.boyName}*.`] : []),
     '',
     'Your order is now complete. If there is any problem at all, please talk to us. Thank you! 🙏'
   ].join('\n');
@@ -271,6 +277,9 @@ export function buildNewCodeText(storeName, d) {
     '',
     `Show this *${d.code}* code to the delivery boy and the order will be marked "delivered".`,
     'The previous code no longer works.',
+    // The rider may have changed since the first message — the boy on this run is the one the
+    // customer will actually meet at the door, so the name is repeated with the new code.
+    ...(d.boyName ? ['', `*${d.boyName}* will bring it to you.`] : []),
     '',
     'Thank you! 🙏'
   ].join('\n');

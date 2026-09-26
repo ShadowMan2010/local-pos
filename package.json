@@ -5,7 +5,11 @@
   "type": "module",
   "description": "Material 3 Web POS with UPI QR, thermal receipts, customer tracking and a Raspberry Pi customer display; all data stored locally",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/proof-photo.test.mjs && node test/proof-image-pipeline.test.mjs",
+    "test:proof": "node test/proof-photo.test.mjs",
+    "test:image": "node test/proof-image-pipeline.test.mjs",
+    "test:ui": "node test/proof-photo-ui.mjs"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",

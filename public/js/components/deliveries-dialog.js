@@ -71,9 +71,9 @@ export function openDeliveriesDialog({ onChange } = {}) {
     const codeInput = h('input', {
       class: 'code-input', type: 'text', inputmode: 'numeric', maxlength: '4', placeholder: '••••',
       'aria-label': `Delivery code for bill ${d.id}`,
-      onkeydown: (e) => { if (e.key === 'Enter') submit(d, codeInput, deliveredBtn); }
+      onkeydown: (e) => { if (e.key === 'Enter') submit(d, codeInput, deliveredBtn, photoFile); }
     });
-    const deliveredBtn = h('button', { type: 'button', class: 'btn btn-filled', onclick: () => submit(d, codeInput, deliveredBtn) }, 'Delivered');
+    const deliveredBtn = h('button', { type: 'button', class: 'btn btn-filled', onclick: () => submit(d, codeInput, deliveredBtn, photoFile) }, 'Delivered');
 
     const stickerBtn = action('Sticker', 'Print the package sticker with the QR the delivery boy scans to collect this parcel',
       () => { printSticker(d); snack(`Sticker for ${d.id} — stick it on the package`, 3000); });
@@ -107,8 +107,23 @@ export function openDeliveriesDialog({ onChange } = {}) {
         })
     ];
 
+    // The code is what closes a delivery, so it stays the main action. The photo beside it is
+    // optional: the shop keeps it as evidence when the till is handed one, but nobody is stopped
+    // from closing a real handover because a camera would not cooperate.
+    let photoFile = null;
+    const photoInput = h('input', {
+      type: 'file', accept: 'image/*', capture: 'environment', class: 'proof-input',
+      'aria-label': `Handover photo for bill ${d.id}`,
+      onchange: (e) => { photoFile = e.target.files?.[0] || null; }
+    });
+    const photoBtn = h('button', {
+      type: 'button', class: 'btn btn-outlined',
+      title: 'Optional: attach a photo of the handover as proof',
+      onclick: () => photoInput.click()
+    }, 'Photo');
+
     const outActions = [
-      h('div', { class: 'code-row' }, codeInput, deliveredBtn),
+      h('div', { class: 'code-row' }, codeInput, deliveredBtn, photoBtn, photoInput),
       action('Resend', 'Send the handover code to the customer again', async () => {
         const r = await api.resendDelivery(d.id);
         snack(r.notified ? 'Code sent to the customer again' : 'Could not send — check WhatsApp is linked', 5000);
@@ -149,14 +164,22 @@ export function openDeliveriesDialog({ onChange } = {}) {
           : h('div', { class: 'wa-actions' }, ...outActions)));
   };
 
-  async function submit(d, codeInput, btn) {
+  async function submit(d, codeInput, btn, photoFile) {
     const code = codeInput.value.trim();
     if (!/^\d{4}$/.test(code)) return snack('Type the 4-digit code the customer reads out', 4000);
     btn.disabled = true;
     btn.textContent = 'Saving…';
     try {
-      await api.confirmDelivery(d.id, code, d.boy?.name || 'shop');
-      snack(`Bill ${d.id} marked delivered`, 2500);
+      // The photo goes up first and separately. If the code then turns out to be wrong, the bill is
+      // still out for delivery and the file is simply unused — a far smaller problem than a
+      // half-finished handover where the photo saved but the confirmation did not.
+      let photo = null;
+      if (photoFile) {
+        const up = await api.uploadDeliveryPhoto(d.id, photoFile);
+        photo = up.url;
+      }
+      await api.confirmDelivery(d.id, code, d.boy?.name || 'shop', photo);
+      snack(photo ? `Bill ${d.id} marked delivered, with the handover photo` : `Bill ${d.id} marked delivered`, 2500);
       load();
       onChange?.();
     } catch (err) {
@@ -167,17 +190,33 @@ export function openDeliveriesDialog({ onChange } = {}) {
     }
   }
 
-  async function load() {
-    list.replaceChildren(h('li', { class: 'cart-empty' }, h('p', { class: 'body-m' }, 'Loading…')));
-    try {
-      const { deliveries } = await api.listDeliveries();
-      const packed = deliveries.filter((d) => d.status === 'packed').length;
-      list.replaceChildren(...(deliveries.length
-        ? deliveries.map(row)
-        : [h('li', { class: 'cart-empty' }, icon('check_circle'),
-            h('p', { class: 'body-l' }, 'Nothing on delivery.'),
-            h('p', { class: 'body-m' }, 'WhatsApp orders appear here once their bill is charged.'))]));
-      if (deliveries.length) {
+    async function load() {
+      list.replaceChildren(h('li', { class: 'cart-empty' }, h('p', { class: 'body-m' }, 'Loading…')));
+      try {
+        const { deliveries, recentDelivered } = await api.listDeliveries();
+        const packed = deliveries.filter((d) => d.status === 'packed').length;
+        const kids = deliveries.length ? deliveries.map(row) : [h('li', { class: 'cart-empty' }, icon('check_circle'),
+          h('p', { class: 'body-l' }, 'Nothing on delivery.'),
+          h('p', { class: 'body-m' }, 'WhatsApp orders appear here once their bill is charged.'))];
+        list.replaceChildren(...kids);
+        // Recently finished jobs sit under the live ones. A delivery closed by code alone is listed
+        // with a dashed "no photo" marker rather than a thumbnail, so the shop can see at a glance
+        // which handovers have no picture behind them if a customer later disputes one.
+        if (recentDelivered?.length) {
+          list.append(h('li', { class: 'body-s muted', style: 'padding:14px 0 2px' }, 'Recently delivered'),
+            ...recentDelivered.map((d) => h('li', { class: 'pm-row' },
+              d.proofPhoto
+                ? h('a', { href: d.proofPhoto, target: '_blank', rel: 'noopener', title: `Open the handover photo for ${d.id}` },
+                    h('img', { class: 'proof-thumb', src: d.proofPhoto, alt: `Handover photo for bill ${d.id}`, loading: 'lazy' }))
+                : h('div', { class: 'proof-none', title: 'No handover photo was attached to this delivery' }, 'no photo'),
+              h('div', { class: 'pm-main' },
+                h('div', { class: 'title-s' }, `${d.customer?.name || d.customer?.phone || 'Walk-in customer'} · ${money(d.total)}`),
+                h('div', { class: 'body-s muted' }, `${d.id} · ${d.itemCount} ${d.itemCount === 1 ? 'item' : 'items'}`),
+                h('div', { class: 'body-s muted' },
+                  `Delivered ${new Date(d.deliveredAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}${d.confirmedBy ? ` · by ${d.confirmedBy}` : ''}`)))));
+        }
+        if (deliveries.length) {
+
         dlg.querySelector('.dlg-sub')?.remove();
         dlg.querySelector('.field-hint')?.replaceChildren(
           h('span', {}, packed

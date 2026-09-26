@@ -46,7 +46,19 @@ export const dismissWaOrder = (code) => post(`/api/whatsapp/orders/${encodeURICo
 
 /* deliveries: bills paid from a WhatsApp order, confirmed by the 4-digit code the customer reads out */
 export const listDeliveries = () => request('/api/deliveries');
-export const confirmDelivery = (id, code, by) => post(`/api/orders/${encodeURIComponent(id)}/deliver`, { code, by });
+export const confirmDelivery = (id, code, by, photo) => post(`/api/orders/${encodeURIComponent(id)}/deliver`, { code, by, photo: photo || null });
+/**
+ * Uploads the handover picture and returns the stored path. Kept separate from the confirmation so
+ * a photo can be filed against a bill that turns out to still be out for delivery, and so the
+ * confirmation itself stays a small JSON call that cannot fail halfway through a large upload.
+ * Sent as raw bytes rather than multipart: the server only ever accepts one image file here, and
+ * the browser can put a File straight into the body with no encoding step in between.
+ */
+export const uploadDeliveryPhoto = (id, file) => request(`/api/orders/${encodeURIComponent(id)}/delivery-photo`, {
+  method: 'POST',
+  headers: { 'content-type': file.type || 'image/jpeg' },
+  body: file
+});
 export const resendDelivery = (id) => post(`/api/orders/${encodeURIComponent(id)}/resend`);
 export const newDeliveryCode = (id) => post(`/api/orders/${encodeURIComponent(id)}/new-code`);
 /** Shop-side fallback when the parcel sticker can't be scanned. Starts the run like a scan does. */
