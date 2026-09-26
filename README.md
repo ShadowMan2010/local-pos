@@ -4,6 +4,34 @@
 
 # LOCAL POS — Material 3 Web POS
 
+A self-hosted shop till. Bills are taken on a tablet, customers order on WhatsApp, and delivery
+happens in two stages — the shop packs the parcel, the delivery boy collects it by scanning the
+package sticker, and only then does the customer get the code that confirms handover.
+
+Everything is stored as plain files in `./data`. No cloud, no account, no monthly fee.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![The till](docs/screenshots/till-dashboard.png) | ![Cart](docs/screenshots/cart.png) |
+| The till, light theme | Cart and checkout |
+| ![Products](docs/screenshots/products.png) | ![On delivery](docs/screenshots/on-delivery.png) |
+| Products, with cost and margin | Two-stage delivery tracking |
+| ![WhatsApp orders](docs/screenshots/whatsapp-orders.png) | ![Today's sales](docs/screenshots/todays-sales.png) |
+| Orders arriving on WhatsApp | Sales, profit and margin |
+| ![Receipt](docs/screenshots/receipt-paid.png) | ![Customer display](docs/screenshots/customer-display.png) |
+| Thermal receipt | Customer-facing screen |
+
+Also: [dark mode](docs/screenshots/till-dark-mode.png),
+[receipt before payment](docs/screenshots/receipt-payment.png),
+[customers](docs/screenshots/customers.png),
+[store settings](docs/screenshots/store-settings.png),
+[weigh station](docs/screenshots/weigh-station.png).
+
+<sub>All screenshots are taken against a demo store with made-up products and customers — no real
+customer names, phone numbers, address or payment details appear in this repository.</sub>
+
 ## Run
 
 ```bash
