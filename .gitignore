@@ -1,2 +1,6 @@
 node_modules/
 data/
+dist/
+
+# Stale: predates the current setup flow, so it would just mislead. Regenerate before tracking it.
+SETUP-GUIDE.pdf

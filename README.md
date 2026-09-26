@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="public/logo.png" alt="LOCAL POS" width="120">
+</div>
+
 # LOCAL POS — Material 3 Web POS
 
 ## Run

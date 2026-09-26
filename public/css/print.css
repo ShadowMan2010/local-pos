@@ -18,6 +18,10 @@
   /* monochrome, high contrast */
   #print-root, #print-root * { color: #000 !important; background: transparent !important; box-shadow: none !important; }
   #print-root .rc-hr { border-top: 1px dashed #000; }
+  /* Thermal heads are monochrome and coarse, so the logo is flattened to a high-contrast grey and
+     kept small: at full size it smudges and costs ~12mm of paper on every single bill. */
+  #print-root .rc-logo { display: block; width: 14mm; height: auto; margin: 0 auto 1.5mm;
+    filter: grayscale(1) contrast(1.35); }
   #print-root img { filter: grayscale(1) contrast(1.6); image-rendering: pixelated; }
 
   /* avoid breaking a line item across pages on long bills */

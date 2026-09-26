@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Backend for LOCAL POS. Everything is stored on THIS machine, inside ./data — no cloud database.
 //
 //   data/config.json      store settings

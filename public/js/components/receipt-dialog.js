@@ -13,6 +13,7 @@ const row = (a, b, cls = '') => h('div', { class: `rc-row ${cls}`.trim() }, h('s
 export function buildReceipt(order, config, { qrSrc = null, paid = false, method = '' } = {}) {
   return h('div', { class: 'rc' },
     h('div', { class: 'rc-center' },
+      h('img', { class: 'rc-logo', src: 'logo.png', alt: '' }),
       h('div', { class: 'rc-title' }, config.storeName),
       config.address && h('div', {}, config.address),
       config.phone && h('div', {}, `Ph: ${config.phone}`)),

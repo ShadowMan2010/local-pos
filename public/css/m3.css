@@ -364,6 +364,7 @@ dialog.m3-dialog::backdrop { background: rgb(0 0 0 / .32); }
 }
 .paper[data-paper="58"] { --paper-w: 200px; font-size: 10.5px; }
 .rc-center { text-align: center; }
+.rc-logo { display: block; width: 44px; height: auto; margin: 0 auto 4px; }
 .rc-title { font-size: 1.3em; font-weight: 700; }
 .rc-strong { font-weight: 700; }
 .rc-hr { border-top: 1px dashed #000; margin: 6px 0; }

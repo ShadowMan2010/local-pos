@@ -22,5 +22,19 @@
   "allowScripts": {
     "protobufjs@7.6.6": true,
     "@whiskeysockets/baileys@7.0.0-rc14": true
-  }
+  },
+  "bin": {
+    "local-pos": "server.js"
+  },
+  "files": [
+    "server.js",
+    "stats.js",
+    "whatsapp.js",
+    "whatsapp-bill.js",
+    "whatsapp-bot.js",
+    "public/",
+    "scripts/",
+    "README.md",
+    "CHANGELOG.md"
+  ]
 }
