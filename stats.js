@@ -6,12 +6,18 @@ const round2 = (n) => Math.round(n * 100) / 100;
 /**
  * @param {object[]} dayOrders paid bills for one day (already filtered by the caller)
  * @returns {{billCount:number, totalSales:number, biggestBill:number,
- *            items:{sku:string,name:string,qty:number,revenue:number,unit:'kg'|'pcs'}[]}}
+ *            totalCost:number|null, totalProfit:number|null, marginPct:number|null,
+ *            uncostedLines:number,
+ *            items:{sku:string,name:string,qty:number,revenue:number,cost:number|null,
+ *                   profit:number|null,unit:'kg'|'pcs'}[]}}
  */
 export function computeDailyStats(dayOrders) {
   const billCount = dayOrders.length;
   let totalSales = 0;
   let biggestBill = 0;
+  let totalCost = 0;      // only meaningful while every line is costed, tracked by uncostedLines
+  let totalProfit = 0;
+  let uncostedLines = 0;
   const itemMap = new Map();
 
   for (const o of dayOrders) {
@@ -22,15 +28,39 @@ export function computeDailyStats(dayOrders) {
       const isWeight = it.weightKg != null;
       const qty = isWeight ? it.weightKg : it.qty;
       const revenue = it.price * it.qty; // qty is always 1 for a weighed line, so this is that line's total either way
-      const cur = itemMap.get(key) || { sku: it.sku || '', name: it.name, qty: 0, revenue: 0, unit: isWeight ? 'kg' : 'pcs' };
+      const cur = itemMap.get(key) || { sku: it.sku || '', name: it.name, qty: 0, revenue: 0, cost: 0, costed: true, unit: isWeight ? 'kg' : 'pcs' };
       cur.qty = Math.round((cur.qty + qty) * 1000) / 1000;
       cur.revenue = round2(cur.revenue + revenue);
+      // One uncosted line makes this item's cost unknown, not zero — a partly-known cost would
+      // quietly understate profit, which is the number the owner is relying on.
+      if (it.cost == null) { cur.costed = false; uncostedLines += 1; }
+      else cur.cost = round2(cur.cost + it.cost * qty);
       itemMap.set(key, cur);
     }
   }
 
   const items = [...itemMap.values()].sort((a, b) => b.revenue - a.revenue);
-  return { billCount, totalSales: round2(totalSales), biggestBill: round2(biggestBill), items };
+  for (const i of items) {
+    i.cost = i.costed ? round2(i.cost) : null;
+    i.profit = i.costed ? round2(i.revenue - i.cost) : null;
+  }
+
+  // Profit is only reported when every line in the day is costed; a partial figure would be a lie.
+  const fullyCosted = uncostedLines === 0;
+  if (fullyCosted) {
+    for (const i of items) totalCost += i.cost;
+    totalProfit = round2(totalSales - totalCost);
+  }
+  return {
+    billCount,
+    totalSales: round2(totalSales),
+    biggestBill: round2(biggestBill),
+    totalCost: fullyCosted ? round2(totalCost) : null,
+    totalProfit: fullyCosted ? totalProfit : null,
+    marginPct: fullyCosted && totalSales > 0 ? round2((totalProfit / totalSales) * 100) : null,
+    uncostedLines,
+    items
+  };
 }
 
 // Highest threshold crossed in each category — one badge per category, not one per rung on the ladder.

@@ -31,13 +31,16 @@ export function openProductsDialog({ config = {}, onChange }) {
   /* ---------- list view ---------- */
   function showList() {
     const list = getProducts();
+    const uncosted = list.filter((p) => p.cost == null).length;
     const row = (p) =>
       h('li', { class: 'pm-row' },
         thumb(p),
         h('div', { class: 'pm-main' },
           h('div', { class: 'title-s' }, p.name),
           h('div', { class: 'body-s muted' },
-            p.soldByWeight ? `${money(p.price)}/kg · ${p.stock} kg in stock · SKU ${p.sku}` : `${money(p.price)} · ${p.stock} in stock · SKU ${p.sku}`)),
+            p.soldByWeight ? `${money(p.price)}/kg · ${p.stock} kg in stock · SKU ${p.sku}` : `${money(p.price)} · ${p.stock} in stock · SKU ${p.sku}`),
+          h('div', { class: 'body-s muted' },
+            p.cost == null ? 'Cost not set — profit hidden' : `Cost ${money(p.cost)} · margin ${money(p.price - p.cost)} (${p.price > 0 ? (((p.price - p.cost) / p.price) * 100).toFixed(0) : 0}%)`)),
         iconBtn('edit', () => showForm(p), `Edit ${p.name}`));
 
     body.replaceChildren(
@@ -46,6 +49,9 @@ export function openProductsDialog({ config = {}, onChange }) {
         h('span', { class: 'body-m muted' }, `${list.length} ${list.length === 1 ? 'item' : 'items'}`),
         h('span', { class: 'spacer' }),
         iconBtn('close', () => dlg.close(), 'Close')),
+      uncosted
+        ? h('div', { class: 'pm-note' }, icon('info', {}), `Set a cost price on ${uncosted} ${uncosted === 1 ? 'item' : 'items'} to see profit and margin.`)
+        : null,
       h('div', { class: 'pm-actions' },
         h('button', { type: 'button', class: 'btn btn-filled', onclick: () => showForm(null) }, icon('add'), 'Add product'),
         config.canImportFirebase && importBtn()),
@@ -92,6 +98,26 @@ export function openProductsDialog({ config = {}, onChange }) {
     const stockLabel = () => (weightCheck.checked ? 'Stock (kg) *' : 'Stock *');
     const priceField = field('price', priceLabel(), { type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: p?.price ?? '', required: true });
     const stockField = field('stock', stockLabel(), { type: 'number', min: '0', step: p?.soldByWeight ? 'any' : '1', inputmode: 'decimal', value: p?.stock ?? '', required: true });
+    // Cost is optional on purpose: leaving it blank keeps profit reporting honest ("unknown")
+    // instead of pretending the item was free. A real 0 is allowed and means genuinely free.
+    const costField = field('cost', 'Cost price (₹)', { type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: p?.cost ?? '' });
+
+    // Shows what this product actually earns, so the owner can judge a price before saving it.
+    const marginNote = h('small', { class: 'field-hint' });
+    function syncMarginNote() {
+      const price = Number(priceField.querySelector('input').value);
+      const costRaw = costField.querySelector('input').value.trim();
+      if (costRaw === '') { marginNote.textContent = 'Leave blank if you do not know the cost. Profit stays hidden until you fill it in.'; return; }
+      const cost = Number(costRaw);
+      if (!Number.isFinite(cost) || cost < 0) { marginNote.textContent = ''; return; }
+      if (!Number.isFinite(price) || price <= 0) { marginNote.textContent = `Cost ${money(cost)} recorded.`; return; }
+      const per = price - cost;
+      marginNote.textContent = `Margin ${money(per)} per ${weightCheck.checked ? 'kg' : 'unit'} (${((per / price) * 100).toFixed(1)}%)`;
+    }
+    for (const f of [priceField, costField]) f.querySelector('input').addEventListener('input', syncMarginNote);
+    weightCheck.addEventListener('change', syncMarginNote);
+    syncMarginNote();
+
     function syncWeightLabels() {
       priceField.querySelector('span').textContent = priceLabel();
       stockField.querySelector('span').textContent = stockLabel();
@@ -120,6 +146,9 @@ export function openProductsDialog({ config = {}, onChange }) {
             h('div', { class: 'title-s' }, 'Sold by weight'),
             h('div', { class: 'body-s muted' }, 'Price is per kg. Sold from the weighing station, not "Add to cart".'))),
         h('div', { class: 'pm-two' }, priceField, stockField),
+        h('div', {},
+          costField,
+          marginNote),
         h('div', { class: 'pm-two' },
           field('category', 'Category', { value: p?.category || '', list: 'pm-cats' }),
           field('emoji', 'Emoji (if no photo)', { value: p?.emoji || '' })),
@@ -142,7 +171,9 @@ export function openProductsDialog({ config = {}, onChange }) {
         if (blob) { newUrl = await uploadImage(blob); image = newUrl; }
         await saveProduct({
           id: p?.id, sku: v.sku.trim(), name: v.name.trim(), price: v.price, stock: v.stock,
-          category: v.category.trim(), emoji: v.emoji.trim(), image, soldByWeight: v.soldByWeight === 'on'
+          category: v.category.trim(), emoji: v.emoji.trim(), image, soldByWeight: v.soldByWeight === 'on',
+          // '' means "not recorded yet"; the server stores that as null so it is never read as zero.
+          cost: v.cost.trim() === '' ? '' : v.cost
         });
         if (oldImage && oldImage !== image) deleteImage(oldImage); // old photo is no longer used
         snack(isEdit ? 'Product updated' : 'Product added');

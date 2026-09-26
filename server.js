@@ -198,13 +198,18 @@ const DEMO = [
 
 // Validates a product coming from the browser. `selfId` lets an edit keep its own SKU.
 function cleanProduct(b, selfId = null) {
-  const p = {
-    sku: str(b.sku, 64), name: str(b.name, 100), price: Number(b.price), stock: Number(b.stock),
-    category: str(b.category, 40), emoji: clip(b.emoji, 4), image: str(b.image, 200),
-    soldByWeight: Boolean(b.soldByWeight) // price is per kg, stock is kg in stock; sold via the weighing station, not "Add to cart"
-  };
-  if (!p.sku || !p.name) return { error: 'SKU and name are required' };
-  if (!Number.isFinite(p.price) || p.price < 0 || p.price > 1e7) return { error: 'Enter a valid price' };
+    const p = {
+      sku: str(b.sku, 64), name: str(b.name, 100), price: Number(b.price), stock: Number(b.stock),
+      category: str(b.category, 40), emoji: clip(b.emoji, 4), image: str(b.image, 200),
+      soldByWeight: Boolean(b.soldByWeight), // price is per kg, stock is kg in stock; sold via the weighing station, not "Add to cart"
+      // What the shop paid for one unit. null means "not recorded yet", which is deliberately
+      // different from 0: a missing cost must not masquerade as a free item and report 100% margin.
+      cost: b.cost === '' || b.cost == null ? null : Number(b.cost)
+    };
+    if (!p.sku || !p.name) return { error: 'SKU and name are required' };
+    if (!Number.isFinite(p.price) || p.price < 0 || p.price > 1e7) return { error: 'Enter a valid price' };
+    if (p.cost !== null && (!Number.isFinite(p.cost) || p.cost < 0 || p.cost > 1e7)) return { error: 'Enter a valid cost price' };
+    if (p.cost !== null) p.cost = round2(p.cost);
   if (!Number.isFinite(p.stock) || p.stock < 0 || p.stock > 1e7) return { error: 'Enter a valid stock quantity' };
   if (p.image && !/^\/uploads\/[\w-]+\.(jpg|png|webp)$/.test(p.image)) return { error: 'Bad photo path' };
   p.price = round2(p.price);
@@ -445,6 +450,13 @@ app.post('/api/orders', async (req, res) => {
       if (!Number.isFinite(weightKg) || weightKg <= 0) return bad(res, 'One of the items on the bill is invalid');
       line.weightKg = Math.round(weightKg * 1000) / 1000;
     }
+    // Snapshot the cost onto the line at the moment of sale, taken from the catalogue rather than the
+    // browser. Profit for a bill has to stay correct after the shop later changes a purchase price,
+    // and a client-supplied cost could be anything.
+    const fromCatalogue = products.find((x) => x.sku === line.sku && x.sku) || products.find((x) => x.id === line.id);
+    const catCost = fromCatalogue && Number.isFinite(fromCatalogue.cost) ? fromCatalogue.cost : null;
+    const sentCost = Number(it.cost);
+    line.cost = catCost !== null ? catCost : (Number.isFinite(sentCost) && sentCost >= 0 ? round2(sentCost) : null);
     items.push(line);
   }
   const paymentMethod = ['cash', 'upi'].includes(b.paymentMethod) ? b.paymentMethod : null;
