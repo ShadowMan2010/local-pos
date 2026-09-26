@@ -352,6 +352,47 @@ The **trophy icon** in the top bar opens a quick end-of-day-style view of **toda
 This reads today's paid bills already held in memory — nothing new is stored on disk for it. It
 resets naturally at midnight (`POS_TZ`) since a new day has no bills yet.
 
+## Cost prices and profit
+
+Revenue is not the same as money in the bank. Every product can carry a **cost price** — what the
+shop actually paid for it — set in **Products → edit**.
+
+- A blank cost is stored as *unknown*, which is deliberately **not** the same as `0`. An item given
+  away free has a real cost of zero; an item whose cost nobody has typed in has no cost at all, and
+  treating the two the same would report a 100% margin on goods the shop paid for.
+- The cost is **copied onto the bill at the moment of sale**, read from the catalogue by the server
+  rather than sent by the browser. Profit on a bill therefore stays correct after a purchase price
+  changes, and a tampered client cannot invent its own cost.
+- **Profit appears only when every line sold has a cost.** If anything is missing its cost, the shop
+  sees its revenue and a note saying how many lines need a cost price, rather than a profit figure
+  that would be quietly too low.
+
+Bills written before cost prices existed have no cost on their lines, so they report revenue with
+profit unknown. That is deliberate: old numbers are not invented.
+
+## Reports and CSV export
+
+The **bar chart icon** in the top bar opens reports over any date range, defaulting to the last
+seven days:
+
+- Total sales, bill count, profit and margin for the period.
+- **What sold** — every item with quantity (kg for weighed items), revenue and profit.
+- **Day by day** — the trend, shown only when the range covers more than one day.
+
+Three CSV downloads, for the same range: **Bills** (one row per bill), **Products** (one row per
+item, with quantity, revenue, cost, profit and margin) and **Day by day** (one row per selling
+day). Files are named `bills-260926-260930.csv` and so on.
+
+Exports are written for spreadsheets, which have sharp edges worth knowing about:
+
+- A **UTF-8 byte-order mark** is included so Excel shows ₹ and any Bengali text correctly instead
+  of mojibake.
+- Values containing a comma, quote or newline are quoted per RFC 4180, so a customer called
+  *Roy, Bikash* cannot shift the columns.
+- A value starting with `=`, `+`, `-` or `@` is prefixed with an apostrophe so a product named
+  `=SUM(A1:A9)` is shown as text instead of being **executed** when the file is opened.
+- Days on which nothing sold are left out of the trend rather than padded in as zero-revenue days.
+
 ## Customer display on a Raspberry Pi Zero 2W
 
 Default (hub mode): the Pi only runs a browser.

@@ -65,3 +65,9 @@ export const removeDeliveryBoy = (phone) => del(`/api/delivery-boys/${encodeURIC
 
 /* Today's sales summary + achievements */
 export const getDailyStats = () => request('/api/stats/daily');
+
+/* Reports over a date range: what sold, what it earned, day by day. Dates are YYMMDD. */
+export const getRangeStats = (from, to) => request(`/api/stats/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+
+// A plain link, not a fetch: the browser handles the download and its own "save as" dialog.
+export const exportUrl = (kind, from, to) => `/api/export/${kind}.csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;

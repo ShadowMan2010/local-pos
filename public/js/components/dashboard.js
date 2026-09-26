@@ -7,6 +7,7 @@ import { openProductsDialog } from './products-dialog.js';
 import { openCustomersDialog } from './customers-dialog.js';
 import { openWhatsappOrdersDialog } from './whatsapp-orders-dialog.js';
 import { openDailySummaryDialog } from './daily-summary-dialog.js';
+import { openReportsDialog } from './reports-dialog.js';
 import { openDeliveriesDialog } from './deliveries-dialog.js';
 import { initBarcodeScanner } from '../barcode.js';
 import { openCameraScanner } from '../camera-scan.js';
@@ -58,6 +59,7 @@ export function renderDashboard(root, { config, onOpenSettings }) {
   }, icon('local_shipping'), delBadge);
   const cameraBtn = iconBtn('qr_code_scanner', () => openCameraScanner({ title: 'Scan barcode or weighing ticket', onResult: handleScan }), 'Scan with camera');
   const summaryBtn = iconBtn('emoji_events', () => openDailySummaryDialog(), "Today's sales");
+  const reportsBtn = iconBtn('bar_chart', () => openReportsDialog(), 'Reports and CSV export');
   const themeBtn = iconBtn('contrast', toggleTheme, 'Toggle light / dark mode');
   const settingsBtn = iconBtn('settings', () => { runCleanups(); onOpenSettings(); }, 'Store settings');
 
@@ -66,7 +68,7 @@ export function renderDashboard(root, { config, onOpenSettings }) {
     h('h1', { class: 'title-l app-title' }, config.storeName), // store name comes from the saved configuration
     status, modeChip,
     h('span', { class: 'spacer' }),
-    productsBtn, customersBtn, waBtn, delBtn, cameraBtn, summaryBtn, themeBtn, cartToggle, settingsBtn);
+    productsBtn, customersBtn, waBtn, delBtn, cameraBtn, summaryBtn, reportsBtn, themeBtn, cartToggle, settingsBtn);
 
   /* ---------- catalog + cart ---------- */
   const catalog = renderCatalog({ onAdd: addProduct, onScan: (code) => handleScan(code) });

@@ -419,6 +419,21 @@ dialog.m3-dialog::backdrop { background: rgb(0 0 0 / .32); }
 .daily-item-rev { font-weight: 500; }
 .stock-out { display: flex; align-items: center; gap: 6px; color: var(--md-error); margin: 4px 0 8px; }
 .stock-low { color: var(--md-error); font-weight: 500; }
+
+/* ---- Reports dialog ---- */
+.reports-dialog { max-width: min(640px, calc(100vw - 24px)); }
+.reports-range { display: flex; align-items: center; gap: 12px; padding: 0 24px 12px; }
+.reports-date { flex: none; width: 168px; }
+.reports-date input { padding-right: 8px; }
+.reports-exports {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 0 24px 16px; border-bottom: 1px solid var(--md-outline-variant); margin-bottom: 4px;
+}
+.reports-exports .btn { text-decoration: none; }
+@media (max-width: 560px) {
+  .reports-range { flex-wrap: wrap; }
+  .reports-date { flex: 1 1 140px; width: auto; }
+}
 .thumb { flex: none; display: grid; place-items: center; width: 48px; height: 48px; overflow: hidden; border-radius: var(--md-shape-sm); background: var(--md-primary-container); font-size: 24px; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .pm-fields { display: grid; gap: 20px; padding: 12px 24px 8px; overflow-y: auto; }

@@ -103,3 +103,96 @@ export function computeStockPosition(products, threshold = 5) {
     .map((p) => ({ sku: p.sku, name: p.name }));
   return { lowStock, outOfStock };
 }
+
+/* ---------- CSV export ---------- */
+
+// A cell whose first character makes a spreadsheet treat it as a formula. A product called
+// "=SUM(A1)" or "+91 discount" would otherwise be executed on open, which is a real risk once an
+// exported file is emailed to an accountant and opened in Excel.
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+function csvCell(value) {
+  if (value == null) return '';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : ''; // never guard numbers: -12.50 is data, not a formula
+  if (typeof value === 'boolean') return value ? 'yes' : 'no';
+  let s = String(value);
+  if (FORMULA_LEAD.test(s)) s = `'${s}`; // leading apostrophe tells Excel/LibreOffice to treat it as text
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/**
+ * Joins rows into RFC 4180 CSV. Rows are arrays of cells; the caller decides the columns.
+ * A UTF-8 BOM is prepended so Excel opens rupee signs and Bengali text correctly instead of
+ * showing mojibake — the difference between a usable export and an unreadable one.
+ * @param {(string|number|boolean|null)[][]} rows
+ */
+export function toCsv(rows) {
+  return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+
+/** One row per bill, newest first. */
+export function buildOrdersCsv(orders) {
+  const rows = [[
+    'Bill', 'Date', 'Time', 'Customer', 'Phone', 'Items', 'Subtotal', 'Discount', 'Total',
+    'Payment', 'Delivery status', 'Delivered by', 'Visit no.'
+  ]];
+  const sorted = [...orders].sort((a, b) => String(b.id).localeCompare(String(a.id)));
+  for (const o of sorted) {
+    const when = new Date(o.paidAt || o.createdAt);
+    if (Number.isNaN(when.getTime())) continue;
+    const itemText = (o.items || [])
+      .map((it) => `${it.name} x${it.weightKg != null ? it.weightKg + 'kg' : it.qty}`)
+      .join('; ');
+    rows.push([
+      o.id,
+      when.toISOString().slice(0, 10),
+      when.toISOString().slice(11, 16),
+      o.customer?.name || '',
+      o.customer?.phone || '',
+      itemText,
+      o.subtotal,
+      o.discount,
+      o.total,
+      o.paymentMethod || '',
+      o.delivery?.status || 'not a delivery',
+      o.delivery?.boy?.name || '',
+      o.visitNo ?? ''
+    ]);
+  }
+  return toCsv(rows);
+}
+
+/** One row per product for the period: what sold, what it brought in, and what it earned. */
+export function buildProductsCsv(items) {
+  const rows = [['SKU', 'Product', 'Quantity', 'Unit', 'Revenue', 'Cost', 'Profit', 'Margin %']];
+  for (const it of items) {
+    rows.push([
+      it.sku || '',
+      it.name,
+      it.qty,
+      it.unit,
+      it.revenue,
+      it.cost == null ? 'cost not set' : it.cost,
+      it.profit == null ? 'unknown' : it.profit,
+      it.profit == null || it.revenue <= 0 ? '' : round2((it.profit / it.revenue) * 100)
+    ]);
+  }
+  return toCsv(rows);
+}
+
+/** One row per day, for charting a trend across the period. */
+export function buildDaysCsv(days) {
+  const rows = [['Date', 'Bills', 'Sales', 'Cost', 'Profit', 'Margin %', 'Biggest bill']];
+  for (const d of days) {
+    rows.push([
+      d.date,
+      d.billCount,
+      d.totalSales,
+      d.totalCost == null ? 'cost not set' : d.totalCost,
+      d.totalProfit == null ? 'unknown' : d.totalProfit,
+      d.marginPct == null ? '' : d.marginPct,
+      d.biggestBill
+    ]);
+  }
+  return toCsv(rows);
+}

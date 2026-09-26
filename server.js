@@ -19,7 +19,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
-import { computeDailyStats, computeAchievements, computeStockPosition } from './stats.js';
+import { computeDailyStats, computeAchievements, computeStockPosition, buildOrdersCsv, buildProductsCsv, buildDaysCsv } from './stats.js';
 // Pure text/parsing helpers only — no Baileys — so this is safe to import even when WhatsApp is off.
 import { buildPackedText, buildOutForDeliveryText, buildDeliveredText, buildDeliveryJobText, buildNewCodeText, buildDeliveryOkText, buildDeliveryBadCodeText, buildDeliveryAlreadyText, buildDeliveryLockedText, buildDeliveryBadQrText, buildPickupOkText, buildPickupAlreadyText, buildNotPickedUpText, buildDeliveryDeclinedText, buildDeliveryBoyNothingToDeclineText } from './whatsapp-bot.js';
 
@@ -952,6 +952,84 @@ app.get('/api/stats/daily', (req, res) => {
   const achievements = computeAchievements(stats);
   const stock = computeStockPosition(products);
   res.json({ date: day, ...stats, achievements, ...stock });
+});
+
+/* ---------- reports over a date range (what is selling, and what it earns) ---------- */
+
+// YYMMDD compares correctly as a string, so lexicographic order is chronological order.
+const isDay = (s) => /^\d{6}$/.test(String(s || ''));
+
+// Bills are bucketed by their paid date in POS_TZ. A bill with an unusable timestamp is skipped
+// rather than filed under today, which would quietly inflate one day's numbers.
+function ordersInRange(from, to) {
+  return [...orders.values()].filter((o) => {
+    const t = new Date(o.paidAt).getTime();
+    if (Number.isNaN(t)) return false;
+    const k = dayKey(new Date(t));
+    return k >= from && k <= to;
+  });
+}
+
+app.get('/api/stats/range', (req, res) => {
+  // Default to the last 7 days: a week is the shortest period that shows a trend without
+  // being dominated by one quiet Sunday.
+  const to = isDay(req.query.to) ? req.query.to : dayKey();
+  const from = isDay(req.query.from) ? req.query.from : dayKey(new Date(Date.now() - 6 * 86400000));
+  if (from > to) return bad(res, '"from" must be on or before "to"');
+  if (to - from > 36500) return bad(res, 'Range is too long; pick a period under 100 years');
+
+  const picked = ordersInRange(from, to);
+  const byDay = new Map();
+  for (const o of picked) {
+    const k = dayKey(new Date(o.paidAt));
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(o);
+  }
+  // Days with no sales are left out of the trend rather than reported as zero-revenue days,
+  // so the chart shows when the shop was open, not padding.
+  const days = [...byDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([date, os]) => ({ date, ...computeDailyStats(os) }));
+
+  const overall = computeDailyStats(picked);
+  res.json({ from, to, days: days.length, overall, byDay: days, ...overall });
+});
+
+/* ---------- CSV export ---------- */
+function sendCsv(res, filename, body) {
+  // Fixed filename prefix + validated date: no user text reaches the header, so no header injection.
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(body);
+}
+
+app.get('/api/export/:kind.csv', (req, res) => {
+  const to = isDay(req.query.to) ? req.query.to : dayKey();
+  const from = isDay(req.query.from) ? req.query.from : dayKey(new Date(Date.now() - 6 * 86400000));
+  if (from > to) return bad(res, '"from" must be on or before "to"');
+
+  const picked = ordersInRange(from, to);
+  const byDay = new Map();
+  for (const o of picked) {
+    const k = dayKey(new Date(o.paidAt));
+    if (!byDay.has(k)) byDay.set(k, []);
+    byDay.get(k).push(o);
+  }
+  const suffix = `${from}-${to}`;
+  switch (req.params.kind) {
+    case 'orders':
+      return sendCsv(res, `bills-${suffix}.csv`, buildOrdersCsv(picked));
+    case 'products': {
+      const items = computeDailyStats(picked).items;
+      return sendCsv(res, `product-sales-${suffix}.csv`, buildProductsCsv(items));
+    }
+    case 'days':
+      return sendCsv(res, `daily-summary-${suffix}.csv`, buildDaysCsv(
+        [...byDay.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, os]) => ({ date, ...computeDailyStats(os) }))
+      ));
+    default:
+      return bad(res, 'Unknown report. Use orders, products or days');
+  }
 });
 
 /* ---------- product images (kept on this server's disk, shared by every device) ---------- */
