@@ -39,6 +39,9 @@ import {
   // Turning a customer's WhatsApp voice note into an order: the local Whisper request, the prompt that
   // reads the transcript, and the match against the shop's real catalogue. Pure, like catalog-ai.js.
   import { resolveStt, buildTranscribeRequest, parseTranscription, buildVoiceOrderPrompt, parseVoiceOrder, buildVoiceOrderReply } from './voice-ai.js';
+  // Pro licensing. Core features never touch this; only the paid ones do, and the check is a local
+  // signature test with no network call (see license.js for why that matters to a shop).
+  import { hasFeature, requireFeature, getLicenseInfo, setLicenseKey, clearLicense, VENDOR_CONTACT } from './license.js';
 
 // Pure text/parsing helpers only — no Baileys — so this is safe to import even when WhatsApp is off.
 import { buildPackedText, buildOutForDeliveryText, buildDeliveredText, buildDeliveryJobText, buildNewCodeText, buildDeliveryOkText, buildDeliveryBadCodeText, buildDeliveryAlreadyText, buildDeliveryLockedText, buildDeliveryBadQrText, buildPickupOkText, buildPickupAlreadyText, buildNotPickedUpText, buildDeliveryDeclinedText, buildDeliveryBoyNothingToDeclineText, buildAnnouncementText, announcementRecipients } from './whatsapp-bot.js';
@@ -2020,6 +2023,25 @@ function aiImage(req) {
 
 /** Whether AI is on, and which host it will use. Never includes the key. */
 app.get('/api/ai/status', (_req, res) => res.json({ ...describeAi(readConfig()?.ai) }));
+
+/**
+ * Refuses a Pro feature when this till has no valid licence for it, in words a shopkeeper can act on.
+ *
+ * Used as route middleware for the paid endpoints and called directly inside the WhatsApp callbacks
+ * that are not routes. It returns a 402 rather than 403: the request is well-formed and the feature
+ * exists — the shop simply has not paid for it, which is a different thing from being forbidden, and
+ * the number is what makes that legible to anyone reading a log.
+ */
+function licenseGate(feature) {
+  return (req, res, next) => {
+    try {
+      requireFeature(feature);
+      next();
+    } catch (err) {
+      res.status(402).json({ error: err.message, feature, upgrade: VENDOR_CONTACT });
+    }
+  };
+}
 /**
  * Points the AI at a provider and a key, or clears it.
  *
@@ -2113,8 +2135,38 @@ app.post('/api/voice/config', (req, res) => {
   res.json({ enabled: stt.configured, baseUrl: stt.baseUrl, model: stt.model, hasKey: Boolean(stt.key), engine });
 });
 
+/* ---------- licensing ----------
+ * The till's Pro licence: which features are unlocked, and the one route that enters a key.
+ *
+ * These are behind the PIN like everything else under /api, and entering a key is audited — a licence
+ * decides whether money was owed, so a record of when it changed belongs in the same log as a
+ * discount or a void.
+ */
+app.get('/api/license', (_req, res) => {
+  res.json({
+    ...getLicenseInfo(),
+    contact: VENDOR_CONTACT,
+    // What Pro covers, so the settings screen can list the benefits without duplicating the list.
+    premiumFeatures: ['ai_scan', 'voice_ordering', 'whatsapp_announce', 'whatsapp_payment']
+  });
+});
+
+app.post('/api/license/key', (req, res) => {
+  const result = setLicenseKey(req.body?.key);
+  if (!result.ok) return bad(res, result.error);
+  audit.record('license.set', { at: actorOf(req), type: getLicenseInfo().type });
+  res.json({ ok: true, ...getLicenseInfo() });
+});
+
+app.post('/api/license/clear', (req, res) => {
+  const result = clearLicense();
+  if (!result.ok) return bad(res, result.error);
+  audit.record('license.clear', { at: actorOf(req) });
+  res.json({ ok: true, ...getLicenseInfo() });
+});
+
 /** A photo of products, a shelf, or a supplier's list, into draft products. */
-app.post('/api/ai/scan-products', readAiImageBody, async (req, res) => {
+app.post('/api/ai/scan-products', licenseGate('ai_scan'), readAiImageBody, async (req, res) => {
   if (!resolveAi(readConfig()?.ai).configured) return bad(res, 'No AI key is set. Add one in Settings first.', 400);
   const image = aiImage(req);
   if (!image) return bad(res, 'Send a JPG, PNG or WebP image');
@@ -2135,7 +2187,7 @@ app.post('/api/ai/scan-products', readAiImageBody, async (req, res) => {
 });
 
 /** One sentence — typed or dictated — into a draft product. */
-app.post('/api/ai/product-from-text', async (req, res) => {
+app.post('/api/ai/product-from-text', licenseGate('ai_scan'), async (req, res) => {
   if (!resolveAi(readConfig()?.ai).configured) return bad(res, 'No AI key is set. Add one in Settings first.', 400);
   const text = str(req.body?.text, 400);
   if (!text) return bad(res, 'Type what the product is first');
@@ -2156,7 +2208,7 @@ app.post('/api/ai/product-from-text', async (req, res) => {
 });
 
 /** A handwritten slip, a weighing ticket or a supplier bill, into line items and a written total. */
-app.post('/api/ai/read-slip', readAiImageBody, async (req, res) => {
+app.post('/api/ai/read-slip', licenseGate('ai_scan'), readAiImageBody, async (req, res) => {
   if (!resolveAi(readConfig()?.ai).configured) return bad(res, 'No AI key is set. Add one in Settings first.', 400);
   const image = aiImage(req);
   if (!image) return bad(res, 'Send a JPG, PNG or WebP image');
@@ -2332,6 +2384,11 @@ function nextWaOrderCode() {
 function attachWaPaymentProof({ phone, buf }) {
   const key = normPhone(phone);
   if (!key || !Buffer.isBuffer(buf) || !buf.length) return { ok: false };
+  // Pro feature. Checked here rather than at the route, because this is reached from the WhatsApp
+  // message callback and has no request to gate. A till without the licence simply does not file the
+  // screenshot — the customer still gets their bill and the shop still takes the payment, so this
+  // never blocks a sale, it only withholds the convenience.
+  if (!hasFeature('whatsapp_payment')) return { ok: false, licensed: false };
   // A week is far longer than an order stays pending; the cutoff only stops an old order from a
   // customer with a long-forgotten list being matched by a screenshot sent today.
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -2505,6 +2562,9 @@ async function maybeAnnounce() {
   // Stay out of the way of tests unless one explicitly asks for the announcement. Tests run against
   // a throwaway data dir and a stand-in WhatsApp, and without this the stand-in counts as connected.
   if (process.env.POS_NO_WHATSAPP === '1' && process.env.POS_ANNOUNCE !== '1') return;
+  // Pro feature. Without the licence this returns quietly and the till carries on: an unlicensed shop
+  // never gets an announcement it did not pay for, and never sees an error about it either.
+  if (!hasFeature('whatsapp_announce')) return;
   if (announcements.voiceOrdering?.sentAt) return;       // already sent; never again
   if (!wa || !wa.getStatus?.().connected) return;         // not connected yet; try on the next tick
   const recipients = announcementRecipients(customers, announcements.optOut || {});
@@ -2688,6 +2748,9 @@ setInterval(() => { maybeAnnounce().catch(() => {}); }, 30000);
           // "yes", exactly like a typed order — so the whole existing confirm/pay flow is reused.
           voiceOrder: async ({ audio, mimeType }) => {
             const cfg = readConfig() || {};
+            // Pro feature, checked before the shop's own switch: an unlicensed till has no voice
+            // ordering to switch on, and the customer is told it is off rather than left guessing.
+            if (!hasFeature('voice_ordering')) return { ok: false, reason: 'off' };
             // The switch in Settings is the master gate, so voice ordering never turns itself on just
             // because a Gemini key was added for some other feature.
             if (cfg.voice?.enabled !== true) return { ok: false, reason: 'off' };

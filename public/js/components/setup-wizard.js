@@ -1,7 +1,7 @@
 // Module 1 — first-time configuration form (also used for Settings -> edit).
 import { h, icon, snack, qrDataUrl, runBusy, busy, copyText } from '../ui.js';
 import * as sfx from '../sfx.js';
-import { saveSetup, changePin, getConfig, getWhatsappStatus, whatsappUnlink, whatsappRelink, whatsappToggle, listDeliveryBoys, addDeliveryBoy, removeDeliveryBoy, getAuthStatus, beginTwoFactor, confirmTwoFactor, disableTwoFactor, newBackupCodes, getAiStatus, saveAiConfig, clearAiConfig, getVoiceStatus, saveVoiceConfig } from '../api.js';
+import { saveSetup, changePin, getConfig, getWhatsappStatus, whatsappUnlink, whatsappRelink, whatsappToggle, listDeliveryBoys, addDeliveryBoy, removeDeliveryBoy, getAuthStatus, beginTwoFactor, confirmTwoFactor, disableTwoFactor, newBackupCodes, getAiStatus, saveAiConfig, clearAiConfig, getVoiceStatus, saveVoiceConfig, getLicense, saveLicenseKey, clearLicenseKey } from '../api.js';
 import { cacheConfig } from '../store.js';
 
 function field({ name, label, value = '', type = 'text', placeholder, hint, required, full, inputmode }) {
@@ -226,6 +226,85 @@ function voiceSection() {
     enableLabel,
     advanced,
     h('div', {}, saveBtn));
+}
+
+/* ---------- Pro licence ---------- */
+// The one place a shop enters a key. The key is a signed string they were given when they paid; it is
+// checked on this machine, with no internet needed, so a shop with a flaky connection is never locked
+// out of what it bought. Everything the shop can do without a key stays working — this card only adds
+// the paid extras, and says in plain words what those are.
+function licenseSection() {
+  const statusText = h('p', { class: 'body-m muted', 'data-license-status': '' }, 'Checking…');
+  const benefits = h('ul', { class: 'license-benefits' });
+  const keyField = field({
+    name: 'licenseKey', label: 'Licence key', type: 'text', full: true,
+    placeholder: 'Paste the key you were sent',
+    hint: 'One long key, usually two parts separated by a dot. It is checked here and nothing is sent to us.'
+  });
+  const keyInput = keyField.querySelector('input');
+  const saveBtn = h('button', { type: 'button', class: 'btn btn-filled' }, icon('key'), ' Activate');
+  const clearBtn = h('button', { type: 'button', class: 'btn btn-text', hidden: true }, icon('logout'), ' Remove licence');
+
+  const paint = (s) => {
+    const active = s.valid && s.type !== 'community';
+    if (!active && s.reason === 'expired') {
+      statusText.textContent = `Expired on ${new Date(s.expiresAt).toLocaleDateString()}. Enter a renewed key to turn Pro back on. Core features still work.`;
+    } else if (!active && s.reason === 'signature') {
+      statusText.textContent = 'The key on this till is not valid. Enter the key from your purchase again.';
+    } else if (active) {
+      const until = s.expiresAt ? ` until ${new Date(s.expiresAt).toLocaleDateString()}` : '';
+      statusText.textContent = `Pro active${until}.`;
+    } else {
+      statusText.textContent = 'Community edition — core features only. Enter a key to unlock Pro.';
+    }
+    clearBtn.hidden = !active;
+    keyInput.placeholder = active ? '(active — paste a new key to replace)' : 'Paste the key you were sent';
+    benefits.replaceChildren(
+      h('li', { class: 'body-m' }, active
+        ? 'Pro features are unlocked on this till.'
+        : `Pro adds: ${(s.premiumFeatures || []).map((f) => f.replace(/_/g, ' ')).join(', ')}.`),
+      h('li', { class: 'body-m muted' }, `Need a key? Write to ${s.contact || 'us'}.`)
+    );
+  };
+
+  async function load() {
+    try { paint(await getLicense()); }
+    catch { statusText.textContent = 'Could not read the licence status.'; }
+  }
+  load();
+
+  saveBtn.onclick = async () => {
+    const key = keyInput.value.trim();
+    if (!key) return snack('Paste the licence key first', 3000, 'error');
+    await runBusy(saveBtn, async () => {
+      try {
+        paint(await saveLicenseKey(key));
+        keyInput.value = '';
+        snack('Licence activated');
+        // Whether AI and voice cards are even shown depends on the licence, so the whole screen is
+        // reloaded rather than left half-updated.
+        setTimeout(() => location.reload(), 900);
+      } catch (err) { snack(err.message, 6000, 'error'); }
+    });
+  };
+
+  clearBtn.onclick = async () => {
+    if (!confirm('Remove the licence key? Pro features will stop working. Core features are unaffected.')) return;
+    await runBusy(clearBtn, async () => {
+      try {
+        paint(await clearLicenseKey());
+        snack('Licence removed');
+        setTimeout(() => location.reload(), 900);
+      } catch (err) { snack(err.message, 5000, 'error'); }
+    });
+  };
+
+  return section('workspace_premium', 'Local POS Pro',
+    'Unlock AI catalog scanning, voice ordering and WhatsApp automation. Core billing, inventory and reports stay free.',
+    statusText,
+    benefits,
+    keyField,
+    h('div', { class: 'ai-actions' }, saveBtn, clearBtn));
 }
 
 // Settings-only: shows the WhatsApp connection status, and the pairing QR code when it needs one.
@@ -767,6 +846,7 @@ root.replaceChildren(
     form,
     existing && aiSection(),
     existing && voiceSection(),
+    existing && licenseSection(),
     existing && whatsappSection(),
     existing && deliveryBoySection())
 );

@@ -459,6 +459,7 @@ export async function startWhatsApp(ctx) {
         ? await ctx.attachPaymentProof({ phone: ctx.normPhone(phone) || phone, buf })
         : null;
       if (filed?.ok) return reply(jid, filed.text || buildPaymentProofSavedText());
+      if (filed?.licensed === false) return reply(jid, buildNoOrderForProofText());
       return reply(jid, filed?.text || buildNoOrderForProofText());
     }
 

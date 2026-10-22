@@ -282,6 +282,8 @@ button { font: inherit; }
 .m3-select:focus { outline: 0; border-color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-primary); }
 .ai-form { display: grid; gap: 4px; margin-top: 8px; }
 .ai-actions { display: flex; gap: 8px; margin-top: 8px; }
+/* ---- Pro licence card (Settings) ---- */
+.license-benefits { list-style: none; display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .m3-check-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; cursor: pointer; font: 400 16px/24px var(--md-font); color: var(--md-on-surface); }
 .m3-check { width: 20px; height: 20px; accent-color: var(--md-primary); }
 .m3-advanced { margin-top: 12px; border-top: 1px solid var(--md-outline-variant); }

@@ -10,3 +10,7 @@ SETUP-GUIDE.pdf
 
 # Firebase CLI cache
 .firebase/
+
+# The vendor licence private key must never be committed. Lives in ~/.config/local-pos/.
+*.pem
+license-private*

@@ -274,3 +274,9 @@ export const scanProducts = (blob) => request('/api/ai/scan-products', {
  * the server and never leave it; only `enabled` and the engine name are ever sent to the browser. */
 export const getVoiceStatus = () => request('/api/voice/status');
 export const saveVoiceConfig = (cfg) => post('/api/voice/config', cfg);
+
+/* Pro licence. The key is written to the server and checked there; the browser only ever reads back a
+ * redacted summary (type, whether it is valid, when it expires) — never the key itself. */
+export const getLicense = () => request('/api/license');
+export const saveLicenseKey = (key) => post('/api/license/key', { key });
+export const clearLicenseKey = () => post('/api/license/clear');

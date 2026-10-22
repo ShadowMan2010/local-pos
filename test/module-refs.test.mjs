@@ -29,7 +29,7 @@ const MODULES = [
   'server.js', 'whatsapp.js', 'whatsapp-bot.js', 'whatsapp-bill.js', 'qr-reader.js',
   'auth.js', 'audit.js', 'products.js', 'orders.js', 'photos.js', 'complaints.js', 'reports.js',
   'deliveries.js', 'customers.js', 'settings.js', 'wa-store.js', 'wa-replies.js', 'wa-orders.js',
-  'wa-menu.js', 'wa-flow.js', 'wa-ai.js', 'wa-i18n.js', 'ai.js', 'catalog-ai.js', 'voice-ai.js', 'counters.js', 'backup.js',
+  'wa-menu.js', 'wa-flow.js', 'wa-ai.js', 'wa-i18n.js', 'ai.js', 'catalog-ai.js', 'voice-ai.js', 'license.js', 'counters.js', 'backup.js',
 ].map((f) => path.join(ROOT, f)).filter((f) => fs.existsSync(f));
 
 // The browser modules too. The same mistake has a browser shape: a component calls a helper that was

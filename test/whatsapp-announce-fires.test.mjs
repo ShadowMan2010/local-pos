@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { killPort } from './browser.mjs';
+import { issueTestLicense } from './license-fixture.mjs';
 
 const PORT = 4983;
 const DIR = '/tmp/opencode/fwaannounce';
@@ -30,8 +31,10 @@ const ENV = {
   POS_ANNOUNCE_GAP_MS: '15'
 };
 
+let LICENSE_ENV = {};
+
 function startServer() {
-  const srv = spawn('node', ['server.js'], { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] });
+  const srv = spawn('node', ['server.js'], { env: { ...ENV, ...LICENSE_ENV }, stdio: ['ignore', 'pipe', 'pipe'] });
   const logs = [];
   srv.stdout.on('data', (d) => logs.push(d.toString()));
   srv.stderr.on('data', (d) => logs.push(d.toString()));
@@ -58,6 +61,8 @@ test('the announcement reaches saved customers once, never the opted-out, never 
     '9123456780': { phone: '9123456780', name: 'Amit', visits: 1 }
   }));
   fs.writeFileSync(path.join(DIR, 'announcements.json'), JSON.stringify({ optOut: { '9876543210': true } }));
+  // The announcement is a Pro feature, so the test till carries a licensed key for it.
+  LICENSE_ENV = issueTestLicense({ dir: DIR }).env;
 
   let srv = startServer();
   try {
