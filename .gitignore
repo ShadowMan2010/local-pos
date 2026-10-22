@@ -7,3 +7,6 @@ pos.log
 
 # Stale: predates the current setup flow, so it would just mislead. Regenerate before tracking it.
 SETUP-GUIDE.pdf
+
+# Firebase CLI cache
+.firebase/
