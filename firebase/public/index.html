@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M3 POS - Modern Point of Sale for Small Businesses</title>
+    <meta name="description" content="A self-hosted, offline-first Material 3 POS system for retail shops. Features billing, inventory, WhatsApp ordering, and AI-powered tools.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" href="logo.png">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <img src="logo.png" alt="M3 POS" class="nav-logo-img">
+                <span class="nav-logo-text">M3 POS</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#download">Download</a>
+                <a href="https://github.com/ShadowMan2010/local-pos" target="_blank" class="nav-github">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    GitHub
+                </a>
+            </div>
+            <button class="nav-mobile-btn" id="navMobileBtn">
+                <span class="material-symbols-rounded">menu</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="hero-container">
+            <div class="hero-badge">
+                <span class="material-symbols-rounded">verified</span>
+                <span>Open Core Model</span>
+            </div>
+            <h1 class="hero-title">Modern Point of Sale for<br><span class="hero-title-gradient">Small Businesses</span></h1>
+            <p class="hero-subtitle">
+                A self-hosted, offline-first POS system built with Material 3 design. 
+                Handle billing, inventory, WhatsApp ordering, and more — on your own terms.
+            </p>
+            <div class="hero-actions">
+                <a href="#download" class="btn btn-primary">
+                    <span class="material-symbols-rounded">download</span>
+                    Download Free
+                </a>
+                <a href="https://github.com/ShadowMan2010/local-pos" target="_blank" class="btn btn-secondary">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    View on GitHub
+                </a>
+            </div>
+            <div class="hero-stats">
+                <div class="hero-stat">
+                    <div class="hero-stat-value">AGPL-3.0</div>
+                    <div class="hero-stat-label">Open Source Core</div>
+                </div>
+                <div class="hero-stat-divider"></div>
+                <div class="hero-stat">
+                    <div class="hero-stat-value">Offline-First</div>
+                    <div class="hero-stat-label">Works Without Internet</div>
+                </div>
+                <div class="hero-stat-divider"></div>
+                <div class="hero-stat">
+                    <div class="hero-stat-value">Self-Hosted</div>
+                    <div class="hero-stat-label">Your Data, Your Server</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Everything you need to run your shop</h2>
+                <p class="section-subtitle">Powerful features for modern retail, without the complexity</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <span class="material-symbols-rounded">point_of_sale</span>
+                    </div>
+                    <h3 class="feature-title">Fast Billing</h3>
+                    <p class="feature-desc">Quick checkout with barcode scanning, discounts, multiple payment modes, and thermal receipt printing.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <span class="material-symbols-rounded">inventory_2</span>
+                    </div>
+                    <h3 class="feature-title">Inventory Management</h3>
+                    <p class="feature-desc">Track stock levels, get low stock alerts, manage products with variants, and track costs & margins.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <span class="material-symbols-rounded">chat</span>
+                    </div>
+                    <h3 class="feature-title">WhatsApp Ordering</h3>
+                    <p class="feature-desc">Customers can order directly on WhatsApp. Accept payment screenshots and manage orders from the dashboard.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <span class="material-symbols-rounded">local_shipping</span>
+                    </div>
+                    <h3 class="feature-title">Delivery Management</h3>
+                    <p class="feature-desc">Two-stage delivery with QR code handover, delivery boy tracking, and proof of delivery photos.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <span class="material-symbols-rounded">smart_toy</span>
+                    </div>
+                    <h3 class="feature-title">AI-Powered Tools <span class="pro-badge">PRO</span></h3>
+                    <p class="feature-desc">Scan product photos with AI, voice ordering via WhatsApp, and smart catalog generation.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <span class="material-symbols-rounded">monitor</span>
+                    </div>
+                    <h3 class="feature-title">Customer Display</h3>
+                    <p class="feature-desc">Show cart and totals on a separate screen for customers. Perfect for shops with a second display.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Simple, transparent pricing</h2>
+                <p class="section-subtitle">Start free, upgrade when you need more</p>
+            </div>
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3 class="pricing-name">Community</h3>
+                        <div class="pricing-price">
+                            <span class="pricing-amount">Free</span>
+                        </div>
+                        <p class="pricing-desc">Perfect for single-shop self-hosting</p>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><span class="material-symbols-rounded check">check</span> Billing & Checkout</li>
+                        <li><span class="material-symbols-rounded check">check</span> Product & Inventory Management</li>
+                        <li><span class="material-symbols-rounded check">check</span> Customer Management</li>
+                        <li><span class="material-symbols-rounded check">check</span> Receipts & Printing</li>
+                        <li><span class="material-symbols-rounded check">check</span> WhatsApp Orders (Basic)</li>
+                        <li><span class="material-symbols-rounded check">check</span> Delivery Management</li>
+                        <li><span class="material-symbols-rounded check">check</span> Customer Display</li>
+                        <li><span class="material-symbols-rounded check">check</span> AGPL-3.0 Licensed</li>
+                        <li><span class="material-symbols-rounded check">check</span> Self-hosted & Offline-first</li>
+                    </ul>
+                    <a href="#download" class="pricing-cta btn btn-secondary">Get Started</a>
+                </div>
+                <div class="pricing-card pricing-card-popular">
+                    <div class="pricing-popular-badge">Most Popular</div>
+                    <div class="pricing-header">
+                        <h3 class="pricing-name">Pro</h3>
+                        <div class="pricing-price">
+                            <span class="pricing-currency">₹</span>
+                            <span class="pricing-amount">999</span>
+                            <span class="pricing-period">/month</span>
+                        </div>
+                        <p class="pricing-desc">For shops that want AI & automation</p>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><span class="material-symbols-rounded check">check</span> Everything in Community</li>
+                        <li><span class="material-symbols-rounded check">check</span> AI Catalog Scanning (Gemini)</li>
+                        <li><span class="material-symbols-rounded check">check</span> Voice Ordering via WhatsApp</li>
+                        <li><span class="material-symbols-rounded check">check</span> WhatsApp Announcements</li>
+                        <li><span class="material-symbols-rounded check">check</span> Payment Screenshot Handling</li>
+                        <li><span class="material-symbols-rounded check">check</span> Priority Support</li>
+                        <li><span class="material-symbols-rounded check">check</span> License Key Activation</li>
+                        <li><span class="material-symbols-rounded check">check</span> No Copyleft Restrictions</li>
+                    </ul>
+                    <a href="mailto:support@m3pos.app?subject=M3%20POS%20Pro%20Inquiry" class="pricing-cta btn btn-primary">Contact for License</a>
+                </div>
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3 class="pricing-name">Enterprise</h3>
+                        <div class="pricing-price">
+                            <span class="pricing-amount">Custom</span>
+                        </div>
+                        <p class="pricing-desc">For chains & multi-location businesses</p>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><span class="material-symbols-rounded check">check</span> Everything in Pro</li>
+                        <li><span class="material-symbols-rounded check">check</span> Multi-Store Management</li>
+                        <li><span class="material-symbols-rounded check">check</span> Cloud Sync</li>
+                        <li><span class="material-symbols-rounded check">check</span> Custom Integrations</li>
+                        <li><span class="material-symbols-rounded check">check</span> On-Premise Support</li>
+                        <li><span class="material-symbols-rounded check">check</span> SLA Guarantee</li>
+                        <li><span class="material-symbols-rounded check">check</span> White-label Options</li>
+                    </ul>
+                    <a href="mailto:support@m3pos.app?subject=M3%20POS%20Enterprise%20Inquiry" class="pricing-cta btn btn-secondary">Contact Us</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section id="download" class="download">
+        <div class="container">
+            <div class="download-card">
+                <h2 class="download-title">Ready to get started?</h2>
+                <p class="download-subtitle">Download M3 POS and run it on your own server in minutes</p>
+                <div class="download-actions">
+                    <a href="https://github.com/ShadowMan2010/local-pos/archive/refs/heads/main.zip" class="btn btn-primary btn-large">
+                        <span class="material-symbols-rounded">download</span>
+                        Download ZIP
+                    </a>
+                    <a href="https://github.com/ShadowMan2010/local-pos" target="_blank" class="btn btn-secondary btn-large">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                        Clone from GitHub
+                    </a>
+                </div>
+                <div class="download-steps">
+                    <div class="download-step">
+                        <div class="download-step-number">1</div>
+                        <div class="download-step-text">Clone or download the repo</div>
+                    </div>
+                    <div class="download-step">
+                        <div class="download-step-number">2</div>
+                        <div class="download-step-text">Run npm install && npm start</div>
+                    </div>
+                    <div class="download-step">
+                        <div class="download-step-number">3</div>
+                        <div class="download-step-text">Complete setup wizard & start selling</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <div class="footer-logo">
+                        <img src="logo.png" alt="M3 POS" class="footer-logo-img">
+                        <span class="footer-logo-text">M3 POS</span>
+                    </div>
+                    <p class="footer-desc">Modern point of sale for small businesses. Open core, self-hosted.</p>
+                    <div class="footer-social">
+                        <a href="https://github.com/ShadowMan2010/local-pos" target="_blank" aria-label="GitHub">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                        </a>
+                    </div>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-column">
+                        <h4 class="footer-column-title">Product</h4>
+                        <a href="#features">Features</a>
+                        <a href="#pricing">Pricing</a>
+                        <a href="#download">Download</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4 class="footer-column-title">Resources</h4>
+                        <a href="https://github.com/ShadowMan2010/local-pos#readme">Documentation</a>
+                        <a href="https://github.com/ShadowMan2010/local-pos/issues">Report Issues</a>
+                        <a href="https://github.com/ShadowMan2010/local-pos/releases">Releases</a>
+                    </div>
+                    <div class="footer-column">
+                        <h4 class="footer-column-title">Legal</h4>
+                        <a href="https://github.com/ShadowMan2010/local-pos/blob/main/LICENSE">AGPL-3.0 License</a>
+                        <a href="https://github.com/ShadowMan2010/local-pos/blob/main/COMMERCIAL-LICENSE.md">Commercial License</a>
+                        <a href="https://github.com/ShadowMan2010/local-pos/blob/main/LICENSING.md">Licensing Info</a>
+                    </div>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 M3 POS. Licensed under AGPL-3.0.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
