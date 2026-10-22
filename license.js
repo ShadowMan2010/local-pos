@@ -1,5 +1,5 @@
 /**
- * M3 POS License Manager
+ * Local POS License Manager
  * 
  * Core functionality is licensed under AGPL-3.0
  * Premium features require a valid subscription license
@@ -57,7 +57,7 @@ export function hasFeature(feature) {
 
 export function requireFeature(feature) {
   if (!hasFeature(feature)) {
-    throw new Error(`Feature '${feature}' requires a M3 POS Pro subscription. Visit https://m3pos.app/pricing for details.`);
+    throw new Error(`Feature '${feature}' requires a Local POS Pro subscription. Visit https://m3pos.app/pricing for details.`);
   }
 }
 

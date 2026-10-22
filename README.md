@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="LOCAL POS" width="120">
 </div>
 
-# LOCAL POS — Material 3 Web POS
+# Local POS — Material 3 Web POS
 
 A self-hosted shop till. Bills are taken on a tablet, customers order on WhatsApp, and delivery
 happens in two stages — the shop packs the parcel, the delivery boy collects it by scanning the

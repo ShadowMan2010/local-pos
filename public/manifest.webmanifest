@@ -1,5 +1,5 @@
 {
-  "name": "M3 POS — Weighing Station",
+  "name": "Local POS — Weighing Station",
   "short_name": "Weighing",
   "description": "Type a weight at the scale and hand the customer a ticket to scan at the till.",
   "id": "/weigh.html",

@@ -5,7 +5,7 @@ module's own README (the Android project writes its own `android/README.md`).
 
 ```text
 You are a senior Android engineer. Build a native Android app for the existing project at
-/home/dhruba/m3-pos ("M3 POS"), a small Indian neighbourhood-shop point-of-sale system. Before
+/home/dhruba/m3-pos ("Local POS"), a small Indian neighbourhood-shop point-of-sale system. Before
 writing code, read the repository to learn the real API surface, data model, and conventions —
 do not invent endpoints or fields. This is a NEW module inside the existing repo, under `android/`.
 Do not modify the existing Node server, PWA, or WhatsApp bot behaviour except to add narrowly

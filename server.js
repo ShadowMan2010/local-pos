@@ -267,7 +267,7 @@ app.post('/api/auth/2fa/begin', (req, res) => {
   const cfg = readConfig() || {};
   const result = beginEnrolment(DATA_DIR, {
     account: str((req.body || {}).account, 60) || 'owner',
-    issuer: str(cfg.storeName, 80) || 'M3 POS'
+    issuer: str(cfg.storeName, 80) || 'Local POS'
   });
   audit.record('auth.2fa_begin', { at: actorOf(req) });
   res.json({ secret: result.secret, url: result.url });

@@ -1,4 +1,4 @@
-// M3 POS Landing Page JavaScript
+// Local POS Landing Page JavaScript
 document.addEventListener('DOMContentLoaded', () => {
     // Mobile navigation
     const navMobileBtn = document.getElementById('navMobileBtn');
