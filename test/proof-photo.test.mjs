@@ -73,6 +73,17 @@ fs.cpSync('data', DIR, { recursive: true });
 // The real WhatsApp login must never be copied into a throwaway dir: with the session present the
 // server would link the shop's actual account and could text real customers from a synthetic bill.
 fs.rmSync(path.join(DIR, 'whatsapp-session'), { recursive: true, force: true });
+// The shop PIN goes too, for the same class of reason. These tests were written before the till had a
+// lock and drive the API directly with no session; the day somebody set a PIN on the real till, a
+// copied config silently turned every request into a 401 and the suite reported "server never became
+// ready" — which reads like a broken server rather than a copied secret. Dropped here so these keep
+// testing the thing they were written to test, against an unlocked instance.
+{
+  const cfgPath = path.join(DIR, 'config.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgPath));
+  delete cfg.pin;
+  fs.writeFileSync(cfgPath, JSON.stringify(cfg));
+}
 // No live WhatsApp, so messages are recorded as failed instead of texting real people.
 // Register a synthetic delivery boy in the copied settings. The server refuses a bill whose rider is
 // not on the list, so the test cannot just invent a number — and the real list is replaced rather

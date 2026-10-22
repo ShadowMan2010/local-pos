@@ -1,7 +1,9 @@
 // Product manager: add, edit, delete products, each with an optional photo stored on the POS server.
-import { h, icon, iconBtn, money, snack } from '../ui.js';
+import { h, icon, iconBtn, money, snack, runBusy } from '../ui.js';
 import { getProducts, saveProduct, removeProduct, addSampleProducts, importFromFirebase } from '../products.js';
 import { compressImage, uploadImage, deleteImage } from '../images.js';
+import { scanProducts } from '../api.js';
+import { suggestSku } from '../catalogue-draft.js';
 
 const thumb = (p) => h('div', { class: 'thumb' }, p.image ? h('img', { src: p.image, alt: '' }) : (p.emoji || '🛒'));
 
@@ -12,10 +14,14 @@ export function openProductsDialog({ config = {}, onChange }) {
   dlg.addEventListener('close', () => { dlg.remove(); onChange(); });
 
   /* ---------- one-time helpers for an empty store ---------- */
+  /* Uses runBusy rather than disabling the button directly. Disabling it gives no feedback at all, so
+     importing from Firebase — a network round trip to a stranger's database — looked like a tap that had
+     done nothing, on a screen that usually opens precisely because the shop has no products yet. */
   async function runOnce(btn, work, done) {
-    btn.disabled = true;
-    try { done(await work()); showList(); }
-    catch (err) { snack(err.message, 7000); btn.disabled = false; }
+    await runBusy(btn, async () => {
+      try { done(await work()); showList(); }
+      catch (err) { snack(err.message, 7000, 'error'); }
+    });
   }
   const sampleBtn = () => {
     const b = h('button', { type: 'button', class: 'btn btn-text', onclick: () => runOnce(b, addSampleProducts, () => snack('10 sample products added')) }, 'Load 10 sample products');
@@ -24,14 +30,36 @@ export function openProductsDialog({ config = {}, onChange }) {
   const importBtn = () => {
     const b = h('button', { type: 'button', class: 'btn btn-tonal', onclick: () => runOnce(b, importFromFirebase, ({ imported, skipped }) =>
       snack(`Imported ${imported} ${imported === 1 ? 'product' : 'products'}${skipped ? ` (${skipped} skipped: repeated SKU or missing details)` : ''}`, 6000)) },
-      icon('cloud_download'), 'Import from Firebase');
+      // Spins while the import runs, for the same reason: the button's own spinner is enough, and this
+      // icon only means "this is happening" when the button is busy.
+      icon('cloud_download', { spin: true }), 'Import from Firebase');
     return b;
   };
 
+  const scanBtn = h('button', { type: 'button', class: 'btn btn-tonal', onclick: () => fileInput.click() }, icon('photo_camera'), 'Scan a photo');
+  const fileInput = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: onScanFile });
+  async function onScanFile(e) {
+    const file = e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    await runBusy(scanBtn, async () => {
+      try {
+        const blob = await compressImage(file, 1600, 0.85);
+        const products = await scanProducts(blob);
+        if (!products.length) {
+          snack('No products found in that photo. Try a closer, clearer picture.', 6000, 'error');
+          return;
+        }
+        showScan(products);
+      } catch (err) {
+        snack(err.message, 7000, 'error');
+      }
+    });
+  }
   /* ---------- list view ---------- */
   function showList() {
     const list = getProducts();
     const uncosted = list.filter((p) => p.cost == null).length;
+    const aiOn = Boolean(config.aiEnabled);
     const row = (p) =>
       h('li', { class: 'pm-row' },
         thumb(p),
@@ -54,6 +82,7 @@ export function openProductsDialog({ config = {}, onChange }) {
         : null,
       h('div', { class: 'pm-actions' },
         h('button', { type: 'button', class: 'btn btn-filled', onclick: () => showForm(null) }, icon('add'), 'Add product'),
+        aiOn && scanBtn,
         config.canImportFirebase && importBtn()),
       h('ul', { class: 'pm-list' }, ...(list.length
         ? list.map(row)
@@ -176,11 +205,11 @@ export function openProductsDialog({ config = {}, onChange }) {
           cost: v.cost.trim() === '' ? '' : v.cost
         });
         if (oldImage && oldImage !== image) deleteImage(oldImage); // old photo is no longer used
-        snack(isEdit ? 'Product updated' : 'Product added');
+        snack(isEdit ? 'Product updated' : 'Product added', 3200, 'success');
         showList();
       } catch (err) {
         if (newUrl) deleteImage(newUrl); // don't leave an unused photo behind
-        snack(err.message, 5000);
+        snack(err.message, 5000, 'error');
         saveBtn.disabled = false;
       }
     }
@@ -190,12 +219,121 @@ export function openProductsDialog({ config = {}, onChange }) {
       try {
         await removeProduct(p.id);
         deleteImage(p.image);
-        snack('Product deleted');
+        snack('Product deleted', 3200, 'success');
         showList();
-      } catch (err) { snack(err.message, 5000); }
+      } catch (err) { snack(err.message, 5000, 'error'); }
     }
   }
 
+  /* ---------- AI photo scan: review drafts ---------- */
+  function showScan(drafts) {
+    const all = getProducts();
+    const taken = new Set(all.map((p) => p.sku));
+    const items = drafts.map((d, i) => {
+      let base = d.sku && String(d.sku).trim() ? String(d.sku).trim() : suggestSku(d.name, taken, `AI-${String(i + 1).padStart(2, '0')}`);
+      if (taken.has(base)) base = suggestSku(d.name, taken, `AI-${String(i + 1).padStart(2, '0')}`);
+      taken.add(base);
+      return {
+        include: true,
+        sku: base,
+        name: (d.name || '').trim(),
+        price: d.price == null || d.price === '' ? '' : String(d.price),
+        stock: d.stock == null || d.stock === '' ? '0' : String(d.stock),
+        category: (d.category || '').trim(),
+        emoji: (d.emoji || '').trim(),
+        soldByWeight: Boolean(d.soldByWeight),
+        cost: d.cost == null || d.cost === '' ? '' : String(d.cost)
+      };
+    });
+    let itemEls = [];
+
+    const listEl = h('div', { class: 'pm-scan-list' });
+    const saveScanBtn = h('button', { type: 'button', class: 'btn btn-filled' }, icon('check'), 'Add products');
+    const actions = h('div', { class: 'pm-foot' },
+      iconBtn('arrow_back', showList, 'Back to products'),
+      h('span', { class: 'spacer' }),
+      h('button', { type: 'button', class: 'btn btn-text', onclick: showList }, 'Cancel'),
+      saveScanBtn);
+
+    const note = h('div', { class: 'pm-note' }, icon('info', {}), 'Check the AI reading. Prices missing from the photo are left blank — fill them before adding.');
+
+    function render() {
+      listEl.replaceChildren(...itemEls.map((ie, idx) => {
+        const it = items[idx];
+        const row = h('div', { class: 'pm-scan-row' },
+          h('input', { type: 'checkbox', checked: it.include, onchange: (e) => { it.include = e.target.checked; } }),
+          h('div', { class: 'pm-scan-main' },
+            field(it, 'name', 'Product name *', { value: it.name, required: true }),
+            h('div', { class: 'pm-two' },
+              field(it, 'price', 'Price (₹) *', { type: 'number', min: '0', step: 'any', inputmode: 'decimal', value: it.price, required: true }),
+              field(it, 'stock', 'Stock', { type: 'number', min: '0', step: it.soldByWeight ? 'any' : '1', inputmode: 'decimal', value: it.stock })),
+            h('div', { class: 'pm-two' },
+              field(it, 'category', 'Category', { value: it.category }),
+              field(it, 'emoji', 'Emoji', { value: it.emoji })),
+            h('label', { class: 'choice' },
+              h('input', { type: 'checkbox', checked: it.soldByWeight, onchange: (e) => { it.soldByWeight = e.target.checked; syncRowLabels(idx); } }),
+              h('div', {}, h('div', { class: 'title-s' }, 'Sold by weight'), h('div', { class: 'body-s muted' }, 'Price is per kg'))),
+            h('small', { class: 'body-s muted' }, `SKU ${it.sku}` + (it.cost ? ` · cost ₹${it.cost}` : ''))));
+        return row;
+      }));
+    }
+
+    function field(it, key, label, attrs = {}) {
+      const inp = h('input', { ...attrs, oninput: (e) => { it[key] = e.target.value; } });
+      return h('label', { class: 'm3-field', style: '--field-bg: var(--md-surface-container-high)' }, inp, h('span', {}, label));
+    }
+    function syncRowLabels(idx) {
+      // render() rebuilds labels via step; easier to rebuild whole list lightly
+      render();
+    }
+
+    itemEls = items;
+    body.replaceChildren(
+      h('div', { class: 'dlg-head' },
+        iconBtn('arrow_back', showList, 'Back to products'),
+        h('h2', { class: 'title-l' }, `${items.length} ${items.length === 1 ? 'product' : 'products'} from photo`)),
+      note,
+      listEl,
+      actions);
+
+    render();
+
+    saveScanBtn.onclick = async () => {
+      const chosen = items.filter((x) => x.include);
+      if (!chosen.length) { snack('Select at least one product to add.', 4000, 'error'); return; }
+      let failed = 0;
+      let ok = 0;
+      let firstErr = '';
+      for (const it of chosen) {
+        const name = it.name.trim();
+        if (!name) { snack('Every included product needs a name.', 4000, 'error'); return; }
+        const price = Number(it.price);
+        if (!Number.isFinite(price) || price < 0) { snack('Every included product needs a valid price.', 4000, 'error'); return; }
+        const stock = Number(it.stock) || 0;
+        const cost = it.cost.trim() === '' ? '' : Number(it.cost);
+        try {
+          await saveProduct({
+            sku: it.sku,
+            name,
+            price,
+            stock,
+            category: it.category.trim(),
+            emoji: it.emoji.trim(),
+            image: '',
+            soldByWeight: it.soldByWeight,
+            cost: cost === '' ? '' : cost
+          });
+          ok += 1;
+        } catch (err) {
+          failed += 1;
+          if (!firstErr) firstErr = err.message;
+        }
+      }
+      if (ok) snack(`Added ${ok} ${ok === 1 ? 'product' : 'products'}.`, 3200, 'success');
+      if (failed) snack(`Failed to add ${failed}: ${firstErr}`, 7000, 'error');
+      showList();
+    };
+  }
   showList();
   document.body.append(dlg);
   dlg.showModal();

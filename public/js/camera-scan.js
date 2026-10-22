@@ -1,6 +1,8 @@
 // Camera-based scanner: an alternative to a USB barcode scanner. Reads a QR code (or a barcode
-// printed as one) using the jsQR library, loaded from a CDN the first time it is needed.
+// printed as one) using the jsQR library, served from this machine rather than a CDN — the shop's
+// internet is not guaranteed, and a scanner that silently cannot start offline is useless at a till.
 import { h, icon, iconBtn } from './ui.js';
+import * as sfx from './sfx.js';
 
 let jsQRPromise = null;
 function loadJsQR() {
@@ -8,9 +10,9 @@ function loadJsQR() {
   if (!jsQRPromise) {
     jsQRPromise = new Promise((resolve, reject) => {
       const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+      s.src = '/vendor/jsQR.js';
       s.onload = () => (window.jsQR ? resolve(window.jsQR) : reject(new Error('Camera-scanning library did not load')));
-      s.onerror = () => reject(new Error('Could not load the camera-scanning library (check the internet connection)'));
+      s.onerror = () => reject(new Error('Could not load the camera-scanning library from the server'));
       document.head.append(s);
     });
   }
@@ -31,26 +33,70 @@ export function openCameraScanner({ title = 'Scan a code', onResult }) {
   const manualInput = h('input', { type: 'text', inputmode: 'text', autocomplete: 'off', placeholder: 'Or type the code' });
 
   let stream = null, raf = null, stopped = false, slowHintTimer = null;
+  // The 2D context is asked for once. Asking per frame is cheap in isolation but it makes the
+  // browser re-create the backing store, which is exactly the kind of stutter this loop must not
+  // have while it is also decoding a QR.
+  const ctx2d = canvas.getContext('2d', { willReadFrequently: true });
+  // jsQR is a full-image search: cost grows with pixel count, and it dominated the frame budget at
+  // 1920x1080, which made the preview stutter and the whole dialog feel like it was struggling.
+  // A QR is readable long before that, so the scan runs on a smaller copy while the preview stays
+  // at full size.
+  const SCAN_MAX = 720;
+  // Scans per second. The preview redraws every frame; decoding does not need to. 8/s is far faster
+  // than a person can move a phone and leaves the main thread free for the video itself.
+  const SCAN_INTERVAL_MS = 125;
+  let lastScan = 0;
 
   function finish(text) {
     if (stopped || !text) return;
     stopped = true;
     dlg.close();
+    // The beep has to land here, at the moment of capture, rather than where the code turns out to be
+    // used. Pointing a phone at a shelf is all eyes and no attention, so a sound is the only feedback
+    // the shopkeeper gets that anything was read at all. No sound on a failed read: that already gets
+    // a visible message, and a noise on every failed frame would train people to ignore it.
+    sfx.play('scan');
     onResult(text);
   }
 
-  function tick() {
-    if (stopped) return;
-    if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = window.jsQR(img.data, img.width, img.height);
-      if (code?.data) return finish(code.data);
-    }
+  /**
+   * Looks for a code in the current video frame. Tries the frame as-shot and then turned on its
+   * side: a phone or a label held at an angle is common, and rotating is far cheaper than asking
+   * the user to line it up perfectly.
+   */
+  function scanFrame() {
+    const vw = video.videoWidth, vh = video.videoHeight;
+    if (!vw || !vh) return null;
+    const scale = Math.min(1, SCAN_MAX / Math.max(vw, vh));
+    const w = Math.max(1, Math.round(vw * scale));
+    const h = Math.max(1, Math.round(vh * scale));
+    canvas.width = w;
+    canvas.height = h;
+    ctx2d.drawImage(video, 0, 0, w, h);
+    const img = ctx2d.getImageData(0, 0, w, h);
+    let code = window.jsQR(img.data, w, h, { inversionAttempts: 'attemptBoth' });
+    if (code?.data) return code.data;
+    // Rotated: draw through a quarter turn rather than re-reading the pixels.
+    canvas.width = h;
+    canvas.height = w;
+    ctx2d.save();
+    ctx2d.translate(h, 0);
+    ctx2d.rotate(Math.PI / 2);
+    ctx2d.drawImage(video, 0, 0, w, h);
+    ctx2d.restore();
+    const turned = ctx2d.getImageData(0, 0, h, w);
+    code = window.jsQR(turned.data, h, w, { inversionAttempts: 'attemptBoth' });
+    return code?.data || null;
+  }
+
+  function tick(now) {
     raf = requestAnimationFrame(tick);
+    if (stopped) return;
+    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+    if (now - lastScan < SCAN_INTERVAL_MS) return;
+    lastScan = now;
+    const data = scanFrame();
+    if (data) return finish(data);
   }
 
   async function start() {

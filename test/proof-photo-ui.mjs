@@ -1,10 +1,16 @@
 /* Feature 11 UI: the deliveries dialog in a real browser, against a throwaway instance.
    Checks the optional Photo button, that a code alone still closes a delivery, and that the
    recently-delivered list shows a real thumbnail or an honest "no photo" marker. */
-import { spawn, execSync } from 'node:child_process';
+import { loadPuppeteer, launchBrowser, killPort } from './browser.mjs';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import puppeteer from '/tmp/opencode/uitest/node_modules/puppeteer-core/lib/puppeteer/puppeteer-core.js';
+
+// puppeteer-core is a test-only dependency kept outside the repo, so nothing here adds it to the shop's
+// own package.json. It is resolved by name rather than by a hardcoded path into its internals: that
+// path moves between major versions (lib/puppeteer -> lib/cjs/puppeteer), and pinning it made this file
+// break on a clean reinstall instead of on a real change.
+const puppeteer = await loadPuppeteer();
 
 const PORT = 3195;
 const DIR = '/tmp/opencode/f11ui';
@@ -12,8 +18,6 @@ const BASE = `http://localhost:${PORT}`;
 let pass = 0, fail = 0;
 let srv = null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const listeners = () => { try { return execSync(`lsof -ti:${PORT} -sTCP:LISTEN 2>/dev/null || true`).toString().trim(); } catch { return ''; } };
-const killPort = () => { for (const p of listeners().split(/\s+/).filter(Boolean)) { if (Number(p) === process.pid) continue; try { process.kill(Number(p), 'SIGKILL'); } catch {} } };
 const t = async (name, fn) => { try { await fn(); console.log('  ok   ' + name); pass++; } catch (e) { console.log('  FAIL ' + name + '\n       ' + e.message); fail++; } };
 const ok = (c, m) => { if (!c) throw new Error(m); };
 
@@ -21,6 +25,11 @@ const PNG_1PX = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64'
 );
+// The browser cannot be handed a Buffer, it needs a real file to attach. Written from the same bytes
+// used for the direct API call below, so this test no longer depends on a PNG somebody once left
+// lying in the temp directory — which is why it passed on a machine with leftover state and failed
+// on a clean one.
+const UPLOAD_PNG = '/tmp/opencode/uitest/onepx.png';
 
 const post = async (p, body) => {
   const r = await fetch(BASE + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
@@ -28,12 +37,25 @@ const post = async (p, body) => {
 };
 const get = async (p) => (await fetch(BASE + p)).json();
 
-killPort();
+killPort(PORT);
 fs.rmSync(DIR, { recursive: true, force: true });
+fs.mkdirSync(path.dirname(UPLOAD_PNG), { recursive: true });
+fs.writeFileSync(UPLOAD_PNG, PNG_1PX);
 fs.cpSync('data', DIR, { recursive: true });
 // The real WhatsApp login must never be copied into a throwaway dir: with the session present the
 // server would link the shop's actual account and could text real customers from a synthetic bill.
 fs.rmSync(path.join(DIR, 'whatsapp-session'), { recursive: true, force: true });
+// The shop PIN goes too, for the same class of reason. These tests were written before the till had a
+// lock and drive the API directly with no session; the day somebody set a PIN on the real till, a
+// copied config silently turned every request into a 401 and the suite reported "server never became
+// ready" — which reads like a broken server rather than a copied secret. Dropped here so these keep
+// testing the thing they were written to test, against an unlocked instance.
+{
+  const cfgPath = path.join(DIR, 'config.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgPath));
+  delete cfg.pin;
+  fs.writeFileSync(cfgPath, JSON.stringify(cfg));
+}
 // Register a synthetic delivery boy in the copied settings. The server refuses a bill whose rider is
 // not on the list, so the test cannot just invent a number — and the real list is replaced rather
 // than appended to, so nothing here depends on (or copies out of) the shop's actual riders.
@@ -66,10 +88,7 @@ async function seed(id, code) {
   return r.order.delivery.code;
 }
 
-const browser = await puppeteer.launch({
-  executablePath: process.env.CHROME_BIN || '/usr/bin/google-chrome',
-  args: ['--no-sandbox', '--disable-dev-shm-usage']
-});
+const browser = await launchBrowser(puppeteer);
 try {
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
@@ -145,7 +164,7 @@ try {
     // Attach through the real input rather than the button, because a headless browser will not
     // open a file chooser on its own.
     const fileInputs = await page.$$('.proof-input');
-    await fileInputs[0].uploadFile('/tmp/opencode/uitest/onepx.png');
+    await fileInputs[0].uploadFile(UPLOAD_PNG);
     const btns = await page.$$('.code-row .btn-filled');
     await btns[0].click();
     await page.waitForFunction(
@@ -181,7 +200,7 @@ try {
 } finally {
   await browser.close();
   if (srv) srv.kill();
-  killPort();
+  killPort(PORT);
   fs.rmSync(DIR, { recursive: true, force: true });
 }
 console.log(`\n${pass} passed, ${fail} failed`);

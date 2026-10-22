@@ -91,8 +91,90 @@ button { font: inherit; }
   font-family: 'Material Symbols Rounded'; font-weight: normal; font-style: normal;
   font-size: 24px; line-height: 1; letter-spacing: normal; text-transform: none;
   display: inline-block; white-space: nowrap; direction: ltr; user-select: none;
-  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   -webkit-font-smoothing: antialiased;
+}
+
+/* Animated icons.
+
+   The fill-on-hover is not a trick with a second glyph or an SVG swap: 'Material Symbols Rounded' is a
+   variable font with a FILL axis, and animating that axis is what the icon was drawn to do. Google
+   publishes outlined and filled cuts of every glyph as two points on one axis, so the browser is
+   interpolating between two drawings the designer actually made rather than between two arbitrary shapes.
+
+   This costs nothing to load, which is the constraint that matters here. An icon font that had to ship a
+   second filled variant would be another 40KB on a splash the weighing station has to draw with the Wi-Fi
+   down, and an icon set of animated SVGs would be far worse — dozens of requests, none of them cacheable
+   as a single file. The axis is already in the bytes the app downloads for every icon it shows.
+
+   Reduced motion does not remove these. A fill that grows over 200ms is not motion in the sense the setting
+   is about — nothing travels across the screen, nothing loops, and it reports the same press the tint
+   already reports — so it is kept as a near-instant change rather than dropped, which would leave the icons
+   looking inert next to the buttons that still respond. What is removed is everything that moves or loops. */
+.material-symbols-rounded {
+  /* `font-variation-settings` is transitionable; `font-weight` and friends are not, which is why the axis
+     is animated rather than the shorthand. The fill is animated on its own so it can be given a longer
+     duration than the colour underneath it without dragging the tint along with it. */
+  transition: font-variation-settings .22s var(--md-ease);
+  /* Every icon in the app starts unfilled and fills when it is hovered, pressed, or focused. Set on the
+     base rule rather than on a per-icon basis so a new icon gets this for free. */
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+@media (hover: hover) {
+  .btn:hover .material-symbols-rounded,
+  .icon-btn:hover .material-symbols-rounded,
+  .chip:hover .material-symbols-rounded,
+  .product .btn:hover .material-symbols-rounded { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+}
+/* :active rather than :hover, because on a touch screen the hover state sticks after a tap on some
+   browsers and an icon left filled is an icon that looks selected when it is not. */
+.btn:active .material-symbols-rounded,
+.icon-btn:active .material-symbols-rounded,
+.chip:active .material-symbols-rounded,
+.product .btn:active .material-symbols-rounded,
+.btn[data-busy] .material-symbols-rounded,
+.icon-btn[data-busy] .material-symbols-rounded { font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+/* Keyboard users get the same acknowledgement a mouse gets, from :focus-visible alone — never :focus, or
+   the fill would appear on every click as well and stop meaning anything. */
+.icon-btn:focus-visible .material-symbols-rounded,
+.btn:focus-visible .material-symbols-rounded,
+.chip:focus-visible .material-symbols-rounded { font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24; }
+
+/* The cart count. Worth marking, because it is the one number on the till that answers "did that go in the
+   basket", and it changes without anything being tapped where the cashier is looking. It is the count and
+   not the cart icon because the icon is always on screen and always looks the same: animating the thing
+   that never changes teaches a cashier to stop looking at it.
+   Re-triggered from JS by removing and re-adding the attribute, because an animation that is already
+   applied is not restarted by setting the same value again. */
+@keyframes badge-pop { 0% { transform: scale(.4); opacity: 0; } 60% { transform: scale(1.18); } 100% { transform: scale(1); opacity: 1; } }
+.nav-badge.pop { animation: badge-pop .32s var(--md-ease) both; }
+
+/* An icon that stands in for "something is happening" is allowed to turn; an icon that stands for a thing
+   is not. `refresh` and `cloud_download` are the two in this app that mean the former, and they are
+   scoped by name rather than given a class so a future icon cannot pick up a spin by being nearby. */
+@keyframes icon-turn { to { transform: rotate(360deg); } }
+.material-symbols-rounded[data-spin] {
+  display: inline-grid; place-items: center;
+  animation: icon-turn 1.1s linear infinite;
+}
+/* Centred with inset rather than a translate, for the same reason the spinner is: the animation sets
+   `transform`, so a transform used for centring would be overwritten by the rotation on the first frame
+   and the glyph would jump to the top-left of its box. */
+.material-symbols-rounded[data-spin]::before { grid-area: 1 / 1; }
+.material-symbols-rounded[data-spin] > * { grid-area: 1 / 1; }
+
+/* Connected. A slow breath on the status dot, which is the one place in the app where "still alive" is
+   itself the message. Slow enough to read as calm rather than as something needing attention, and it stops
+   the moment the connection drops, because a pulsing dot next to "Offline" is a lie about reassurance. */
+@keyframes dot-breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.82); } }
+.badge:not(.offline) .dot { animation: dot-breathe 2.4s var(--md-ease) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The fill stays, as explained above: it is a change of state rather than travel, and it is the only
+     thing marking a press on an icon-only button. What goes is the rotation and the breathing dot. */
+  .material-symbols-rounded { transition: none; }
+  .material-symbols-rounded[data-spin] { animation: md-fade 1.2s ease-in-out infinite; }
+  .badge:not(.offline) .dot { animation: none; }
+  .nav-badge.pop { animation: md-fade .28s ease-out both; }
 }
 
 /* ---- Buttons ---- */
@@ -189,6 +271,31 @@ button { font: inherit; }
 .m3-field input:focus + span, .m3-field input:not(:placeholder-shown) + span { top: -9px; font-size: 12px; line-height: 16px; }
 .m3-field input:focus + span { color: var(--md-primary); }
 .field-hint { display: block; margin: 4px 16px 0; color: var(--md-on-surface-variant); font: 400 12px/16px var(--md-font); }
+
+/* ---- Settings: AI (Gemini) + voice ordering ---- */
+.m3-select {
+  width: 100%; height: 56px; padding: 0 16px; border: 1px solid var(--md-outline);
+  border-radius: var(--md-shape-xs); background: transparent; color: var(--md-on-surface);
+  font: 400 16px/24px var(--md-font); letter-spacing: .5px;
+}
+.m3-select:hover { border-color: var(--md-on-surface); }
+.m3-select:focus { outline: 0; border-color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-primary); }
+.ai-form { display: grid; gap: 4px; margin-top: 8px; }
+.ai-actions { display: flex; gap: 8px; margin-top: 8px; }
+.m3-check-row { display: flex; align-items: center; gap: 10px; margin: 12px 0 4px; cursor: pointer; font: 400 16px/24px var(--md-font); color: var(--md-on-surface); }
+.m3-check { width: 20px; height: 20px; accent-color: var(--md-primary); }
+.m3-advanced { margin-top: 12px; border-top: 1px solid var(--md-outline-variant); }
+.m3-advanced > summary {
+  cursor: pointer; list-style: none; padding: 12px 0; font: 500 14px/20px var(--md-font);
+  letter-spacing: .1px; color: var(--md-primary);
+}
+.m3-advanced > summary::-webkit-details-marker { display: none; }
+.m3-advanced > summary::before {
+  content: 'expand_more'; font-family: 'Material Symbols Rounded'; font-size: 20px;
+  vertical-align: -5px; margin-right: 8px; transition: transform .2s;
+}
+.m3-advanced[open] > summary::before { transform: rotate(180deg); }
+.m3-advanced > p { margin: 0 0 8px; }
 
 /* ---- Segmented button + radio cards ---- */
 .seg { display: inline-flex; border: 1px solid var(--md-outline); border-radius: var(--md-shape-full); overflow: hidden; flex: none; }
@@ -329,6 +436,29 @@ button { font: inherit; }
 }
 @media (max-width: 600px) { .field-grid { grid-template-columns: 1fr; } }
 
+/* Network address rows. The address is set in a monospace-ish, selectable, unbroken line because it is
+   read off the screen and typed into another device; wrapping it mid-address is how 192.168.1.60 becomes
+   192.168.1.6. `overflow-wrap` is left off deliberately for the same reason — this string must never break
+   across lines, and it is kept short enough to fit by the server capping the address list. */
+.net-row {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; justify-content: space-between;
+  padding: 12px 16px; border-radius: var(--md-shape-md);
+  background: var(--md-surface-container-high);
+}
+.net-row-txt { min-width: 0; }
+.net-row .body-m { margin: 0; }
+.net-addr {
+  font: 500 17px/24px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--md-on-surface); white-space: nowrap; user-select: all; -webkit-user-select: all;
+}
+.net-row .btn { flex: none; }
+/* Stacks rather than squeezing: the address needs its own line on a phone, and a copy button beside a
+   truncated address is no use to anyone. */
+@media (max-width: 600px) {
+  .net-row { flex-direction: column; align-items: stretch; }
+  .net-row .btn { align-self: flex-start; }
+}
+
 /* ---- Dialog ---- */
 dialog.m3-dialog {
   width: 100%; max-width: min(880px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 0; border: 0;
@@ -345,8 +475,259 @@ dialog.m3-dialog::backdrop { background: rgb(0 0 0 / .32); }
 .action-col .btn { width: 100%; }
 @media (max-width: 720px) { .dlg-body { grid-template-columns: 1fr; } .preview-col { max-height: 50vh; } }
 
-.progress { width: 20px; height: 20px; flex: none; border-radius: 50%; border: 3px solid var(--md-primary-container); border-top-color: var(--md-primary); animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+/* ---- Loading: Material 3 progress indicators ----
+   The circular indeterminate indicator from the M3 spec, at the proportion the spec asks for — a 2px
+   stroke on an 18px circle. The previous version used a 3px stroke, which is nearly twice the ratio M3
+   specifies and read as a solid spinning blob rather than a progress indicator. */
+.progress, .md-spinner {
+  --md-spinner-color: var(--md-primary);
+  display: inline-block; width: 18px; height: 18px; flex: none;
+  border-radius: 50%;
+  /* The track is the same hue at low alpha so the arc has something to travel against, which is what
+     makes the rotation read as "working" rather than as a decorative shape. */
+  border: 2px solid var(--md-track, var(--md-surface-container-highest));
+  border-top-color: var(--md-spinner-color);
+  animation: md-spin .8s linear infinite;
+}
+@keyframes md-spin { to { transform: rotate(360deg); } }
+@keyframes md-fade { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+/* On a filled button the indicator has to be the on-primary colour or it disappears into the button. */
+.btn-filled .progress, .btn-filled .md-spinner, .btn .md-spinner { --md-spinner-color: var(--md-on-primary); --md-track: var(--md-primary); }
+.btn-text .md-spinner, .btn-outlined .md-spinner, .btn-tonal .md-spinner { --md-spinner-color: var(--md-primary); --md-track: var(--md-surface-container-highest); }
+
+/* M3 replaces the circular indicator with a linear one when the person has asked for less motion, so
+   this is a spec behaviour rather than a nicety. The rotation is swapped for a fade of the same arc:
+   same shape, same "something is happening" signal, no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .progress, .md-spinner { animation: md-fade 1.2s ease-in-out infinite; }
+}
+
+/* A button that is working.
+   The label is made transparent rather than removed, so the button keeps its exact width while the
+   spinner is in place. Removing it would make every busy button shrink and then grow again, and on a
+   till that reads as the interface jumping around at the moment someone is trying to confirm a tap
+   landed. Child elements are hidden as well, so an icon-plus-label button does not keep its icon. */
+.btn[data-busy] { color: transparent !important; }
+.btn[data-busy] > *:not(.md-spinner) { visibility: hidden; }
+/* Centred with inset+margin rather than translate(-50%,-50%) on purpose: the spinner is rotated by an
+   animation that sets `transform`, and a transform used for positioning would be overwritten by it and
+   fling the spinner to the top-left corner on the first frame. */
+.btn[data-busy] .md-spinner { position: absolute; inset: 0; margin: auto; }
+
+/* ---- Boot screen ---- */
+/* Covers the app while its modules load and the till's configuration is fetched. It sits on top of
+   everything with its own background rather than being a page background, so it can fade away to reveal
+   the dashboard underneath instead of the page appearing and then being covered. */
+#boot {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--md-surface);
+  opacity: 1;
+  transition: opacity .25s var(--md-ease);
+}
+#boot.leaving { opacity: 0; pointer-events: none; }
+
+.boot-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center; padding: 24px; }
+/* Sized in CSS rather than left to the width/height attributes alone so the box is reserved before the
+   image has loaded. Without this the text below jumps down half a second after the logo appears. */
+.boot-logo { width: 104px; height: 111px; object-fit: contain; }
+.boot-name { font: 500 28px/36px var(--md-font); letter-spacing: 4px; color: var(--md-on-surface); }
+
+/* The tagline's typeface, self-hosted.
+   Self-hosted rather than linked from Google Fonts, and that is the whole reason it works. Two earlier
+   attempts failed the same way: the stack named premium faces, and every device fell through to Georgia
+   because it did not have them. Naming a font is not loading it. These files are 46KB and 25KB, they are
+   served from this origin, and the weighing station's own service worker caches them — so the splash gets a
+   real Didone on a cold start with no signal, which is the case that matters. Fetching from
+   fonts.googleapis.com at splash time would have been the one version guaranteed to arrive late on the
+   device that can least afford to wait.
+
+   One file, not two weights: the woff2 is a variable font with a `wght` axis, so the range is declared here
+   rather than shipping the same bytes twice. Latin and latin-ext are split because that is how the font is
+   subset, and the tagline needs no more than latin — the ext file is there for the accented characters that
+   "Bharat" does not need but a shop name in the same face might. `font-display: swap` because a fallback
+   that appears instantly and is replaced is better than a blank line while a splash waits. */
+@font-face {
+  font-family: 'Bodoni Moda';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/bodoni-moda-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02C5-02C7, U+02C9-02CB, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+1EF2-1EFF,
+    U+2020, U+20A0-20AB, U+20AD-20CF, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Bodoni Moda';
+  font-style: normal;
+  font-weight: 400 900;
+  font-display: swap;
+  src: url('/fonts/bodoni-moda-latin.woff2') format('woff2');
+  /* Basic Latin and Latin-1, which is everything the tagline and the shop names beside it need. */
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* The tagline is the one line on this screen that is a statement rather than a label, so it is the one line
+   set in something other than the app's sans-serif.
+
+   What makes a serif read as premium is contrast: the thin strokes against the thick ones. Georgia and Times
+   are sturdy transitional faces with almost none, so they look like the serif you get when nobody chose a
+   serif. The faces that carry it are the Didone and old-style families — Bodoni, Didot, Baskerville,
+   Hoefler — and those are ordered first here deliberately.
+
+   There is no webfont in this stack, and that is a decision rather than a shortcut. The weighing station is
+   launched from the home screen with the shop's Wi-Fi down as often as not; a splash that waits on
+   fonts.googleapis.com to say "Built for Bharat by" is a splash that shows its text late, or falls back to
+   whatever arrived first, on the one device that must never look broken. So this trades the flashiest option
+   for the one that is right on a cold start with no signal.
+
+   The previous stack led with 'Instrument Serif', which nothing in the project ever loads — no link, no
+   @font-face — so every device fell straight through to Georgia and the name was decoration. Every entry
+   below is a face that is actually installed on some real OS, and the generic `serif` at the end guarantees
+   that even an unusual Linux build gets a serif rather than collapsing into Roboto. */
+.boot-by {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+  font-family: 'Bodoni Moda', 'Bodoni 72', 'Bodoni MT', Didot, 'Didot LT STD', 'Hoefler Text', Baskerville,
+               'Baskerville Old Face', 'Libre Baskerville', 'Playfair Display', 'Old Standard TT',
+               'Iowan Old Style', 'Apple Garamond', Garamond, 'EB Garamond', Georgia,
+               'Times New Roman', Times, serif;
+  font-size: 17px; line-height: 26px; color: var(--md-on-surface-variant);
+}
+/* Wider tracking, because at this size the premium is in the spacing as much as the shapes: tightly set,
+   a Didone reads as a novelty. The optical raise is small — old-style faces sit lower than a sans at the
+   same nominal size, so without it the line looks like it dropped next to the logo. */
+.boot-by > .boot-tagline {
+  font-size: 18px; line-height: 26px; letter-spacing: .06em;
+  position: relative; top: -1px;
+  /* Optional and never load-bearing: old-style figures where the face has them, which is what sets this
+     kind of serif apart from a body face. Harmless where the face lacks the feature. */
+  font-variant-numeric: oldstyle-nums proportional-nums;
+  font-feature-settings: 'onum' 1, 'pnum' 1;
+}
+/* Small screen, small type. The tagline is supporting information; it must not compete with the mark on a
+   phone, and it must not be what pushes the logo off a short screen. */
+@media (max-width: 380px), (max-height: 560px) {
+  .boot-by { font-size: 15px; line-height: 22px; }
+  .boot-by > .boot-tagline { font-size: 16px; line-height: 22px; }
+}
+/* The wordmark is a 6:1 strip, so it is sized by width and never taller than its own ratio. */
+.boot-edupulse { height: auto; width: 168px; max-width: 60vw; display: block; }
+
+/* Both marks are drawn for a white page: the shop logo is a white-background PNG, and the EduPulse strip is
+   dark ink. On the dark splash either one disappears or arrives as a white rectangle, so each sits on its
+   own light plate. Cheaper and more legible than shipping a second cut of every logo for dark mode, and it
+   keeps the two marks looking like one lockup rather than two pictures floating in the dark. */
+.boot-plate {
+  display: flex; align-items: center; justify-content: center;
+  padding: 14px 18px; border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(0,0,0,.10), 0 6px 20px rgba(0,0,0,.08);
+}
+
+/* ---- the shine ---- */
+/* A highlight sweeping across each logo, so the splash reads as something starting rather than something
+   stuck. The band is an overlay masked by the mark's own alpha, which means the light only ever appears
+   where the artwork actually is: no rectangle of glare across the empty part of the plate. */
+.boot-shine { position: relative; display: inline-flex; overflow: hidden; border-radius: 10px; }
+.boot-shine::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(100deg,
+      rgba(255,255,255,0) 38%, rgba(255,255,255,.95) 50%, rgba(255,255,255,0) 62%);
+  background-size: 260% 100%;
+  background-repeat: no-repeat;
+  /* Keyed to the mark rather than to a generic shape: an opaque logo needs an alpha mask, a transparent
+     wordmark already has one, and a mask built from the wrong source is a grey box over the artwork. */
+  -webkit-mask: var(--shine-mask) center / contain no-repeat;
+  mask: var(--shine-mask) center / contain no-repeat;
+  animation: boot-sheen 2.8s var(--md-ease) infinite;
+  pointer-events: none;
+}
+.boot-logo-shine { --shine-mask: url('/logo.png'); }
+.boot-edupulse-shine { --shine-mask: url('/edupulse-logo.png'); border-radius: 4px; }
+
+@keyframes boot-sheen {
+  0%   { background-position: 180% 0; }
+  55%, 100% { background-position: -80% 0; }
+}
+
+@keyframes boot-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+.boot-logo, .boot-name, .boot-by, .boot-plate { animation: boot-in .4s var(--md-ease) both; }
+.boot-name { animation-delay: .06s; }
+.boot-by { animation-delay: .12s; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The fade-up goes and so does the shine. A sweeping highlight is exactly the kind of looping motion
+     that setting is asking to be spared, and a splash is not worth overriding somebody's setting for. */
+  .boot-logo, .boot-name, .boot-by, .boot-plate { animation: none; }
+  .boot-shine::after { animation: none; background: none; }
+  #boot { transition: none; }
+}
+
+/* ---- Motion ----
+   Movement in this app is functional, not decorative. Everything here answers one of three things: a tap
+   landed, something arrived, or the till is working. Nothing loops, nothing moves on its own, and nothing
+   that a cashier needs to read while billing is animated at all.
+
+   The one rule that shapes all of it: motion must not be the only way a change is noticed. Every animation
+   here is paired with a state change that is already visible without it, so if the animation is dropped, if
+   the browser runs with `prefers-reduced-motion`, or if a till is too slow to paint it, the app still works
+   and still says what changed. That is the difference between feedback and decoration. */
+
+/* Tap feedback. M3's state layer is an overlay that fades in on press; the 1px inset shift is the cheap
+   part that survives on a cheap tablet, where an opacity-only change can be missed entirely. Scoped to
+   things that are actually clickable, and it releases on release, so a tap that is held down cannot leave
+   the till looking stuck. */
+.btn, .icon-btn, .chip, .product { transition: transform .12s var(--md-ease), box-shadow .2s var(--md-ease), background-color .15s var(--md-ease); }
+.btn:not([disabled]):active, .icon-btn:not([disabled]):active, .chip:not([disabled]):active { transform: scale(.97); }
+.product:not([disabled]):active { transform: scale(.985); }
+.product:hover { box-shadow: var(--md-elev-2); }
+.product.flash { animation: flash .7s var(--md-ease); }
+
+/* New cart lines slide in. Applied by cart-panel to rows whose key was not in the cart on the previous
+   render, which is the whole reason this is a class and not a plain CSS animation on `.cart-item`: the list
+   is rebuilt from scratch on every change, so an animation on the type would replay for all ten lines every
+   time somebody nudges a quantity by one. */
+@keyframes line-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.cart-item.is-new { animation: line-in .26s var(--md-ease) both; }
+
+/* The total moves when it changes. A cashier reads the total to know a tap registered, so this one earns
+   its motion — but it is a nudge, not a bounce, and it is driven by the number actually changing rather
+   than by any timer, so a sale that is being left alone stays perfectly still. */
+@keyframes total-tick { 0% { transform: scale(1); } 40% { transform: scale(1.045); } 100% { transform: scale(1); } }
+.headline-m.total-changed { animation: total-tick .34s var(--md-ease); display: inline-block; }
+
+/* Catalog cards fade up in a short stagger, capped at eight. The cap is the point: a shop with four hundred
+   products should not get four hundred sequential delays, and the tail of a long grid would still be fading
+   in seconds after the list was readable. The delay is per-card and tiny, so the last card is moving within
+   280ms of the first. Applied by catalog only when the grid is (re)built, not on every keystroke, because
+   re-searching should feel instant rather than re-staggering under the cursor. */
+@keyframes card-in { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
+.product.enter { animation: card-in .3s var(--md-ease) both; animation-delay: calc(var(--i, 0) * 35ms); }
+
+/* The cart sheet and dialogs slide. Sheet enters from the edge it is anchored to, so the direction matches
+   where the panel lives. */
+@keyframes sheet-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.cart-sheet.enter { animation: sheet-in .28s var(--md-ease) both; }
+
+/* Cart empty state, because it appears and disappears as a sale starts and finishes, and a blank list with no
+   transition reads as a failed render rather than an empty basket. */
+@keyframes empty-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+.cart-empty.enter { animation: empty-in .3s var(--md-ease) both; }
+
+/* Motion is decoration wherever it is not the answer to "did my tap land" or "did that item arrive", so it
+   goes entirely. The scale-down press is kept as an opacity change rather than removed: a press that gives
+   no feedback at all is worse for somebody who needs the confirmation, and a change in brightness is the
+   quietest signal that still registers. */
+@media (prefers-reduced-motion: reduce) {
+  .cart-item.is-new, .product.enter, .cart-sheet.enter, .cart-empty.enter { animation: md-fade .28s ease-out both; }
+  .headline-m.total-changed { animation: md-fade .3s ease-out; }
+  .btn:not([disabled]):active, .icon-btn:not([disabled]):active, .chip:not([disabled]):active, .product:not([disabled]):active {
+    transform: none;
+    background-color: color-mix(in srgb, currentColor 8%, transparent);
+  }
+}
 
 /* ---- Snackbar ---- */
 #snackbar {
@@ -391,9 +772,50 @@ dialog.m3-dialog::backdrop { background: rgb(0 0 0 / .32); }
 .wa-actions .btn { white-space: nowrap; }
 .pm-main { flex: 1; min-width: 0; }
 .pm-main .title-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The customer's UPI screenshot, when they sent one with a WhatsApp order. */
+.wa-proof {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 2px;
+  color: var(--md-primary); font-size: 0.75rem; font-weight: 600; text-decoration: none;
+}
+.wa-proof .material-symbols-rounded { font-size: 16px; }
+.wa-proof:hover { text-decoration: underline; }
+
+/* ---- the complaint conversation, shown as a chat ---- */
+.chat-thread {
+  display: flex; flex-direction: column; gap: 8px; margin: 10px 0; padding: 10px;
+  max-height: 320px; overflow-y: auto; border-radius: var(--md-shape-lg);
+  background: var(--md-surface-container-low);
+}
+.chat-empty { text-align: center; padding: 12px 4px; }
+.chat-msg {
+  max-width: 85%; padding: 8px 12px; border-radius: 16px; align-self: flex-start;
+  background: var(--md-surface-container-highest); color: var(--md-on-surface);
+}
+/* The shop's own line sits on the right and in the shop's colour, the way it does in every chat app, so
+   "did I already answer this?" is answered by where the bubble is rather than by reading it. */
+.chat-msg.out { align-self: flex-end; background: var(--md-primary-container); color: var(--md-on-primary-container); }
+/* The till answering on its own is the one line that was never read before it was sent, so it is marked
+   rather than blended in with what a person typed. */
+.chat-msg.till { background: var(--md-tertiary-container); color: var(--md-on-tertiary-container); }
+.chat-who { font: 500 11px/14px var(--md-font); opacity: .75; margin-bottom: 2px; }
+.chat-text { font: 400 14px/20px var(--md-font); white-space: pre-wrap; word-break: break-word; }
+.chat-at { font: 400 10px/14px var(--md-font); opacity: .65; text-align: right; margin-top: 2px; }
+.chat-composer { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
+.chat-input {
+  flex: 1; min-width: 0; min-height: 44px; max-height: 120px; padding: 11px 14px; resize: none;
+  border: 1px solid var(--md-outline); border-radius: var(--md-shape-lg); background: var(--md-surface-container-low);
+  color: var(--md-on-surface); font: 400 15px/22px var(--md-font);
+}
+.chat-input:focus { outline: 0; border-color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-primary); }
+.chat-send { flex: none; border-radius: var(--md-shape-full); }
 .wa-actions { display: flex; flex: none; gap: 6px; }
 .wa-actions .btn { white-space: nowrap; }
 .wa-qr-wrap:empty { display: none; }
+/* Start/stop and unlink sit side by side on one row in the settings card. Its own class rather than a
+   change to .wa-actions, which is a vertical column shared with the orders, complaints and deliveries
+   dialogs — those stack their actions on purpose, and one card wanting a row is not a reason to re-lay-out
+   the other three. */
+.wa-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .wa-qr { width: 220px; height: 220px; image-rendering: pixelated; margin: 8px 0; padding: 12px; background: #fff; border-radius: var(--md-shape-sm); box-shadow: var(--md-elev-1); }
 
 /* ---- Daily summary + achievements dialog ---- */
@@ -515,3 +937,8 @@ dialog.m3-dialog::backdrop { background: rgb(0 0 0 / .32); }
 .boy-pick { display: grid; gap: 8px; padding: 12px; border-radius: var(--md-shape-md);
   background: var(--md-surface-container); }
 .boy-pick:empty { display: none; }
+
+/* AI product scan review */
+.pm-scan-list { display: flex; flex-direction: column; gap: 12px; padding: 0 24px 12px; overflow-y: auto; }
+.pm-scan-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border-radius: var(--md-shape-md); background: var(--md-surface-container-high); }
+.pm-scan-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }

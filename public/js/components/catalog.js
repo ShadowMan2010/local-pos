@@ -44,6 +44,12 @@ export function renderCatalog({ onAdd, onScan }) {
     );
   }
 
+  /* How many cards have ever been drawn. Search and category changes must not re-stagger the grid: the
+     cashier is typing and the cards are moving out from under the cursor, which is worse than no motion at
+     all. So the stagger runs once, when the catalog first has products, and category changes after that are
+     instant. */
+  let drawn = 0;
+
   function draw() {
     const cats = ['All', ...new Set(products.map((p) => p.category).filter(Boolean))];
     chips.replaceChildren(...cats.map((c) =>
@@ -53,8 +59,20 @@ export function renderCatalog({ onAdd, onScan }) {
       (category === 'All' || p.category === category) &&
       (!query || p.name.toLowerCase().includes(query) || p.sku.includes(query)));
 
-    grid.replaceChildren(...(list.length
-      ? list.map(card)
+    const cards = list.map((p, i) => {
+      const el = card(p);
+      // Capped at eight: the delay is 35ms per card, so the ninth card would start after the first has
+      // finished, and a four-hundred-product shop would still be animating minutes later. Cards past the cap
+      // simply appear, which is what a shop that big needs anyway.
+      if (!drawn && i < 8) {
+        el.classList.add('enter');
+        el.style.setProperty('--i', String(i));
+      }
+      return el;
+    });
+    if (cards.length) drawn++;
+    grid.replaceChildren(...(cards.length
+      ? cards
       : [h('p', { class: 'empty body-l' }, products.length ? 'No product matches your search.' : 'No products yet. Tap the box icon in the top bar to add your first product.')]));
   }
 

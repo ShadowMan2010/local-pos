@@ -73,20 +73,24 @@ const highestCrossed = (value, steps) => steps.reduce((hit, s) => (value >= s ? 
 const inr = (n) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
 /** @returns {{emoji:string, title:string}[]} */
+// Badge wording is plain English on purpose. This is the shopkeeper's own screen, sitting next to every
+// other label on it, and it was the only part written in romanised Bengali ("Aajker prothom bill!").
+// A till that switches languages halfway through one dialog reads as a different, lesser tool - and
+// romanised Bengali is harder to read than either script, so it helped nobody.
 export function computeAchievements(stats) {
   const badges = [];
-  if (stats.billCount >= 1) badges.push({ emoji: '🎉', title: "Aajker prothom bill!" });
+  if (stats.billCount >= 1) badges.push({ emoji: '🎉', title: 'First bill of the day!' });
 
   const revStep = highestCrossed(stats.totalSales, REVENUE_STEPS);
-  if (revStep) badges.push({ emoji: '💰', title: `${inr(revStep)} periye gelo aaj!` });
+  if (revStep) badges.push({ emoji: '💰', title: `${inr(revStep)} in sales today!` });
 
   const billStep = highestCrossed(stats.billCount, BILL_STEPS);
-  if (billStep) badges.push({ emoji: '🧾', title: `${billStep} bill aaj!` });
+  if (billStep) badges.push({ emoji: '🧾', title: `${billStep} bills today!` });
 
-  if (stats.biggestBill >= BIG_BILL_STEP) badges.push({ emoji: '🏆', title: `Boro bill: ${inr(stats.biggestBill)}` });
+  if (stats.biggestBill >= BIG_BILL_STEP) badges.push({ emoji: '🏆', title: `Biggest bill: ${inr(stats.biggestBill)}` });
 
   const bigItem = stats.items.find((i) => i.qty >= ITEM_QTY_STEP);
-  if (bigItem) badges.push({ emoji: '🔥', title: `${bigItem.name}: ${Math.round(bigItem.qty)} ${bigItem.unit} bikri holo!` });
+  if (bigItem) badges.push({ emoji: '🔥', title: `${bigItem.name}: ${Math.round(bigItem.qty)} ${bigItem.unit} sold!` });
 
   return badges;
 }

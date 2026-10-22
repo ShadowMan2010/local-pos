@@ -15,12 +15,19 @@ export function openWhatsappOrdersDialog({ panel, onChange }) {
     const time = new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
     // The name the customer gave over WhatsApp, so the cashier can see who it is before loading it.
     const who = o.name ? `${o.name} · ${o.phone}` : `${o.phone} · no name given`;
+    // The customer's UPI screenshot, if they sent one. A link rather than a thumbnail: the proof is
+    // read for the amount and the UPI reference, which is unreadable at list size.
+    const proof = o.paymentProof?.url
+      ? h('a', { class: 'wa-proof', href: o.paymentProof.url, target: '_blank', rel: 'noopener noreferrer' },
+        icon('receipt_long'), 'Payment screenshot received')
+      : null;
     return h('li', { class: 'pm-row' },
       h('div', { class: 'thumb' }, icon('chat')),
       h('div', { class: 'pm-main' },
         h('div', { class: 'title-s' }, `${who} · ${money(o.total)}`),
         h('div', { class: 'body-s muted' }, lines),
-        h('div', { class: 'body-s muted' }, `${o.code} · ${time}`)),
+        h('div', { class: 'body-s muted' }, `${o.code} · ${time}`),
+        proof),
       h('div', { class: 'wa-actions' },
         h('button', { type: 'button', class: 'btn btn-text', onclick: () => dismiss(o) }, 'Dismiss'),
         h('button', { type: 'button', class: 'btn btn-tonal', onclick: () => loadIntoCart(o) }, 'Load into cart')));
@@ -40,7 +47,7 @@ export function openWhatsappOrdersDialog({ panel, onChange }) {
 
   async function dismiss(o) {
     try { await api.dismissWaOrder(o.code); onChange(); load(); }
-    catch (err) { snack(err.message, 4000); }
+    catch (err) { snack(err.message, 4000, 'error'); }
   }
 
   async function loadIntoCart(o) {

@@ -1,6 +1,9 @@
 node_modules/
 data/
 dist/
+# The POS service writes its log here (see ~/.config/systemd/user/m3pos.service). It is the only record
+# of what the till was doing, so it is deliberately kept out of /tmp, which does not survive a reboot.
+pos.log
 
 # Stale: predates the current setup flow, so it would just mislead. Regenerate before tracking it.
 SETUP-GUIDE.pdf

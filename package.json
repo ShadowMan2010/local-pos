@@ -6,10 +6,17 @@
   "description": "Material 3 Web POS with UPI QR, thermal receipts, customer tracking and a Raspberry Pi customer display; all data stored locally",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/proof-photo.test.mjs && node test/proof-image-pipeline.test.mjs",
+    "test": "POS_NO_WHATSAPP=1 node --test test/qr-reader.test.mjs test/known-name.test.mjs test/proof-photo.test.mjs test/proof-image-pipeline.test.mjs test/complaints.test.mjs test/complaint-ai.test.mjs test/complaint-conversation.test.mjs test/comments.test.mjs test/complaint-routing.test.mjs test/security.test.mjs test/sfx.test.mjs test/updater.test.mjs test/module-refs.test.mjs test/totp.test.mjs test/two-factor.test.mjs test/whatsapp-status.test.mjs test/whatsapp-stop.test.mjs test/whatsapp-bill.test.mjs test/whatsapp-announcement.test.mjs test/whatsapp-payment-proof.test.mjs test/whatsapp-announce-fires.test.mjs test/ai.test.mjs test/catalog-ai.test.mjs test/voice-ai.test.mjs",
     "test:proof": "node test/proof-photo.test.mjs",
     "test:image": "node test/proof-image-pipeline.test.mjs",
-    "test:ui": "node test/proof-photo-ui.mjs"
+    "test:ui": "node test/complaints-ui.mjs && node test/proof-photo-ui.mjs && node test/pin-gate-ui.mjs && node test/pwa-weigh.mjs && node test/sfx-ui.mjs && node test/sticker-ui.mjs && node test/whatsapp-status-ui.mjs && node test/loading-ui.mjs && node test/boot-fullscreen-ui.mjs && node test/gate-2fa-ui.mjs && node test/pos-motion-ui.mjs && node test/display-pair-ui.mjs && node test/settings-2fa-box-ui.mjs && node test/settings-ai-voice-ui.mjs",
+    "test:qr": "node --test test/qr-reader.test.mjs",
+    "test:name": "node test/known-name.test.mjs",
+    "test:complaints": "node --test test/complaints.test.mjs test/complaint-conversation.test.mjs",
+    "test:security": "POS_NO_WHATSAPP=1 node --test test/security.test.mjs",
+    "test:routing": "node --test test/complaint-routing.test.mjs",
+    "test:sfx": "node --test test/sfx.test.mjs",
+    "test:refs": "node --test test/module-refs.test.mjs"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",

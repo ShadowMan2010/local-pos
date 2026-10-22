@@ -2,7 +2,7 @@
 // boy picks the parcel up from the shop by photographing the sticker on the package, and only then is
 // the customer told it is out for delivery and sent the 4-digit code that closes the job at the door.
 // The code is never shown here, because typing what you can already see would prove nothing.
-import { h, icon, iconBtn, money, snack } from '../ui.js';
+import { h, icon, iconBtn, money, snack, runBusy } from '../ui.js';
 import * as api from '../api.js';
 
 const STATUS = {
@@ -15,10 +15,27 @@ const STATUS = {
  * document rather than part of the till so what comes out of the printer is only the sticker — none of
  * the shop's own screens or buttons. The image comes from the server, so it is the same on every
  * till and a boy has to scan this exact code.
+ *
+ * The picture is fetched first, with the shop PIN, and only then is the window written. That order is
+ * the whole point: the QR cannot be loaded by the <img> itself (a browser sends no PIN on an image
+ * request), and a sticker window that opened with an empty box in it printed a blank label that the
+ * delivery boy then could not scan — with nothing to say the code had never loaded. If the fetch fails
+ * the window is never opened, so the shop gets the reason on screen instead of a useless piece of paper.
  */
-function printSticker(d) {
+async function printSticker(d) {
+  let stickerUrl;
+  try {
+    stickerUrl = await api.deliveryStickerImage(d.id);
+  } catch (e) {
+    snack(e.message || 'Could not load the sticker QR', 6000);
+    return false;
+  }
   const win = window.open('', '_blank', 'width=420,height=560');
-  if (!win) return snack('Your browser blocked the sticker window — allow pop-ups for this page', 6000);
+  if (!win) {
+    URL.revokeObjectURL(stickerUrl);
+    snack('Your browser blocked the sticker window — allow pop-ups for this page', 6000);
+    return false;
+  }
   win.document.write(`<!doctype html><html><head><title>Sticker ${d.id}</title><style>
     @page { margin: 8mm; }
     body { font: 13px/1.4 system-ui, sans-serif; margin: 0; padding: 16px; color: #000; }
@@ -33,7 +50,7 @@ function printSticker(d) {
     <div class="wrap">
       <h1>${STATUS[d.status]?.label || 'Delivery'} sticker</h1>
       <p class="sub">Stick this on the package</p>
-      <img src="${api.deliveryStickerUrl(d.id)}" alt="Package pickup QR code">
+      <img src="${stickerUrl}" alt="Package pickup QR code">
       <p class="bill">${d.id}</p>
       <p class="sub">${d.customer?.name || d.customer?.phone || 'Walk-in customer'} · ${d.itemCount} ${d.itemCount === 1 ? 'item' : 'items'}</p>
       <p class="foot">The delivery boy sends a photo of this code to collect the parcel.</p>
@@ -42,7 +59,16 @@ function printSticker(d) {
   </body></html>`);
   win.document.close();
   win.focus();
-  setTimeout(() => { try { win.print(); } catch { /* the button is there if the popup was blocked */ } }, 350);
+  // Printed from the loaded image rather than on a timer: a timer measured from the window opening
+  // races the download, and on a slow shop connection it fired first and printed an empty sticker.
+  const img = win.document.querySelector('img');
+  const go = () => setTimeout(() => { try { win.print(); } catch { /* the button is there if the popup was blocked */ } }, 100);
+  if (img?.complete) go();
+  else img?.addEventListener('load', go, { once: true });
+  // Revoked only once the window is closed: doing it immediately would break the image in the popup,
+  // and leaving it leaks the blob for as long as the tab is open, which on a long shift is a lot.
+  win.addEventListener('pagehide', () => URL.revokeObjectURL(stickerUrl), { once: true });
+  return true;
 }
 
 export function openDeliveriesDialog({ onChange } = {}) {
@@ -51,11 +77,13 @@ export function openDeliveriesDialog({ onChange } = {}) {
 
   const action = (label, title, fn) => {
     const btn = h('button', { type: 'button', class: 'btn btn-text', title, onclick: async () => {
-      btn.disabled = true;
-      const was = btn.textContent;
-      btn.textContent = '…';
-      try { await fn(); } catch (err) { snack(err.message, 5000); }
-      finally { btn.disabled = false; btn.textContent = was; }
+      // The label is left in place and only made invisible by CSS, so the button keeps its width and there
+      // is no text to save and restore. The old version swapped the label for an ellipsis, which lost the
+      // button's own name for the duration and left a row of identical "…" buttons with nothing to tell
+      // them apart.
+      await runBusy(btn, async () => {
+        try { await fn(); } catch (err) { snack(err.message, 5000, 'error'); }
+      });
     } }, label);
     return btn;
   };
@@ -76,7 +104,13 @@ export function openDeliveriesDialog({ onChange } = {}) {
     const deliveredBtn = h('button', { type: 'button', class: 'btn btn-filled', onclick: () => submit(d, codeInput, deliveredBtn, photoFile) }, 'Delivered');
 
     const stickerBtn = action('Sticker', 'Print the package sticker with the QR the delivery boy scans to collect this parcel',
-      () => { printSticker(d); snack(`Sticker for ${d.id} — stick it on the package`, 3000); });
+      // Awaited, and the success message only after it resolves. It used to fire the snackbar straight
+      // away, so a sticker that failed to load still told the shop it was printing — and the boy turned
+      // up with nothing to scan.
+      async () => {
+        const ok = await printSticker(d);
+        if (ok) snack(`Sticker for ${d.id} — stick it on the package`, 3000);
+      });
 
     // While the parcel is in the shop the useful actions are about getting a boy to take it. Once it
     // has left, the only thing left is closing the handover, so the code box replaces them.
@@ -84,7 +118,7 @@ export function openDeliveriesDialog({ onChange } = {}) {
       stickerBtn,
       action('Picked up', 'Shop-side fallback: mark the parcel collected without the sticker scan. The customer is told it is out for delivery either way.', async () => {
         const r = await api.confirmPickup(d.id, d.boy?.name || 'shop');
-        snack(r.notified ? `${d.id} out for delivery — the customer has been sent the code` : `${d.id} picked up, but the customer could NOT be messaged — tell them by hand`, 6000);
+        snack(r.notified ? `${d.id} out for delivery — the customer has been sent the code` : `${d.id} picked up, but the customer could NOT be messaged — tell them by hand`, 6000, r.notified ? 'success' : 'error');
         load(); onChange?.();
       }),
       action('Give to another boy', 'Hand this job to a different delivery boy while it is still in the shop', async () => {
@@ -95,14 +129,14 @@ export function openDeliveriesDialog({ onChange } = {}) {
         const boy = boys[Number(pick.trim()) - 1];
         if (!boy) return snack('That is not one of the delivery boys', 4000);
         const r = await api.assignDelivery(d.id, boy);
-        snack(r.jobSent ? `Job sent to ${boy.name}` : `Assigned to ${boy.name}, but the message did NOT go out — tell him by hand`, 5000);
+        snack(r.jobSent ? `Job sent to ${boy.name}` : `Assigned to ${boy.name}, but the message did NOT go out — tell him by hand`, 5000, r.jobSent ? 'success' : 'error');
         load();
       }),
       action('Hand back', 'Nobody can take this one. Takes it off the list so it can be sorted out.',
         async () => {
           if (!confirm(`Hand bill ${d.id} back?\n\nIt leaves the delivery list. The customer has only been told it is being packed.`)) return;
           await api.declineDelivery(d.id, d.boy?.name || 'shop');
-          snack(`${d.id} handed back`, 2500);
+          snack(`${d.id} handed back`, 2500, 'success');
           load();
         })
     ];
@@ -126,14 +160,15 @@ export function openDeliveriesDialog({ onChange } = {}) {
       h('div', { class: 'code-row' }, codeInput, deliveredBtn, photoBtn, photoInput),
       action('Resend', 'Send the handover code to the customer again', async () => {
         const r = await api.resendDelivery(d.id);
-        snack(r.notified ? 'Code sent to the customer again' : 'Could not send — check WhatsApp is linked', 5000);
+        snack(r.notified ? 'Code sent to the customer again' : 'Could not send — check WhatsApp is linked', 5000, r.notified ? 'success' : 'error');
         load();
       }),
       action('New code', 'Issue a new code and text it to the customer only. The old one stops working. Use when the code may be known to someone it should not be.', async () => {
         if (!confirm(`Give bill ${d.id} a new delivery code?\n\nThe customer is texted the new code. The old one stops working.`)) return;
         const r = await api.newDeliveryCode(d.id);
-        snack(r.notified ? 'New code sent to the customer. The old code no longer works.'
-          : 'Could not send — check WhatsApp is linked', 5000);
+          snack(r.notified ? 'New code sent to the customer. The old code no longer works.'
+            : 'Could not send — check WhatsApp is linked', 5000, r.notified ? 'success' : 'error');
+
         load();
       })
     ];
@@ -179,11 +214,11 @@ export function openDeliveriesDialog({ onChange } = {}) {
         photo = up.url;
       }
       await api.confirmDelivery(d.id, code, d.boy?.name || 'shop', photo);
-      snack(photo ? `Bill ${d.id} marked delivered, with the handover photo` : `Bill ${d.id} marked delivered`, 2500);
+      snack(photo ? `Bill ${d.id} marked delivered, with the handover photo` : `Bill ${d.id} marked delivered`, 2500, 'success');
       load();
       onChange?.();
     } catch (err) {
-      snack(err.message, 5000);
+      snack(err.message, 5000, 'error');
       btn.disabled = false;
       btn.textContent = 'Delivered';
       codeInput.select();

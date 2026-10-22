@@ -1,6 +1,18 @@
-// Product photos: shrink on the phone first, then store the file on the POS server's disk (data/uploads).
-// Only the short path (e.g. /uploads/1726-ab12.jpg) is saved in Firestore, so photos stay off the cloud
-// and every device on the same server shows them.
+  // Product photos: shrink on the phone first, then store the file on the POS server's disk (data/uploads).
+  // Only the short path (e.g. /uploads/1726-ab12.jpg) is saved in Firestore, so photos stay off the cloud
+  // and every device on the same server shows them.
+  //
+  // These two calls talk to the server directly rather than through api.js, because they send image bytes
+  // and api.js's helpers JSON-encode whatever they are given. They still have to carry the shop PIN: the
+  // upload route sits behind the gate like everything else, and without the header every photo upload was
+  // refused with a 401 and threw "Photo upload failed (401)" - a failure with no cause on screen. The
+  // token is read the same way api.js reads it, so signing in and out still applies.
+  const authHeader = () => {
+    let token = '';
+    try { token = sessionStorage.getItem('pos.pin.token') || ''; } catch { /* private mode */ }
+    return token ? { authorization: `Bearer ${token}` } : {};
+  };
+
 
 /** Resize to at most `max` px on the longest side and re-encode as JPEG (~30–80 KB). */
 export async function compressImage(file, max = 640, quality = 0.82) {
@@ -33,7 +45,7 @@ export async function compressImage(file, max = 640, quality = 0.82) {
 
 /** @returns {Promise<string>} public path such as /uploads/… */
 export async function uploadImage(blob) {
-  const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+    const res = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'image/jpeg', ...authHeader() }, body: blob });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Photo upload failed (${res.status})`);
   return data.url;
@@ -42,5 +54,5 @@ export async function uploadImage(blob) {
 /** Best-effort cleanup of a photo file that is no longer used. */
 export function deleteImage(url) {
   if (!url || !url.startsWith('/uploads/')) return Promise.resolve();
-  return fetch(`/api/upload/${encodeURIComponent(url.split('/').pop())}`, { method: 'DELETE' }).catch(() => {});
+    return fetch(`/api/upload/${encodeURIComponent(url.split('/').pop())}`, { method: 'DELETE', headers: authHeader() }).catch(() => {});
 }

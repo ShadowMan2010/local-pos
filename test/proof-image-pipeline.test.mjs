@@ -95,8 +95,11 @@ try {
   ok(!outMeta.exif, 'the re-encoded proof carries no EXIF block');
   ok(Buffer.isBuffer(stored) && stored[0] === 0xff && stored[1] === 0xd8, 'the stored proof is a JPEG');
 
-  section('6. the transform matches what whatsapp.js actually applies');
+  section('6. the transform matches what the app actually applies');
+  // The proof transform stays in whatsapp.js; the scanning side moved into qr-reader.js so it can be
+  // tested on its own. Both are checked, because the guarantees are about the code that runs.
   const waSrc = await import('node:fs').then((fs) => fs.readFileSync('whatsapp.js', 'utf8'));
+  const qrSrc = await import('node:fs').then((fs) => fs.readFileSync('qr-reader.js', 'utf8'));
   ok(/resize\(\{ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true \}\)/.test(waSrc),
     'whatsapp.js caps the stored copy at 1280px');
   ok(/\.jpeg\(\{ quality: 80 \}\)/.test(waSrc), 'whatsapp.js stores JPEG at quality 80');
@@ -104,10 +107,16 @@ try {
   // The scan side must stay RGBA. jsQR throws on any other bytes-per-pixel, and the failure looks
   // like "no QR found" rather than an error, so a greyscale "optimisation" would silently break
   // every scan in the field.
-  ok(/\.ensureAlpha\(\)/.test(waSrc), 'whatsapp.js scans in RGBA, which is what jsQR requires');
+  ok(/\.ensureAlpha\(\)/.test(qrSrc), 'qr-reader.js scans in RGBA, which is what jsQR requires');
   // sharp throws on an empty buffer rather than returning nothing, so the length check has to come
   // first or a failed photo download crashes the message loop.
-  ok(/if \(!buf\?\.length\) return null;/.test(waSrc), 'whatsapp.js bails out on an empty buffer before sharp sees it');
+  ok(/if \(!buf\?\.length\) return null;/.test(qrSrc), 'qr-reader.js bails out on an empty buffer before sharp sees it');
+  // The OpenCV helper is a bonus path, so it must resolve to null on every failure rather than
+  // rejecting, and it must have a timeout that kills a wedged child.
+  ok(/QR_PYTHON_TIMEOUT_MS = \d+/.test(qrSrc), 'the Python helper has a timeout');
+  ok(/child\.kill\('SIGKILL'\)/.test(qrSrc), 'a timed-out Python helper is killed');
+  ok(/if \(err\.code === 'ENOENT'\) pyState\.unavailable = true;/.test(qrSrc),
+    'a missing python3 is remembered instead of retried per photo');
 } catch (err) {
   ok(false, `threw: ${err && err.stack ? err.stack : err}`);
 }

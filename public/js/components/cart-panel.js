@@ -89,7 +89,7 @@ export function renderCartPanel({ onCheckout, onClose }) {
         const r = cart.setWeightKg(it.key, e.target.value);
         if (!r.ok) {
           e.target.value = String(it.weightKg); // snap back to the last good weight
-          snack(r.reason === 'stock' ? `Only ${it.stock} kg of ${it.name} left in stock` : 'Enter a weight above zero', 4000);
+          snack(r.reason === 'stock' ? `Only ${it.stock} kg of ${it.name} left in stock` : 'Enter a weight above zero', 4000, 'warn');
         }
       }
     });
@@ -118,10 +118,37 @@ export function renderCartPanel({ onCheckout, onClose }) {
 
   const sumRow = (label, value) => h('div', { class: 'sum-row body-m' }, h('span', {}, label), h('span', {}, value));
 
+  /* Motion, decided by what actually changed rather than by a timer.
+     This list is rebuilt from scratch on every render, so the rows that should animate have to be worked
+     out here: `seenKeys` holds what the last render produced, and a row animates only if its key was not
+     in it. Without that, adding one item would slide all of them in again, and nudging a quantity would
+     re-animate the entire sale — on a ten-line basket that is visible jank on the screen the cashier is
+     looking at while they work. */
+  const seenKeys = new Set();
+  /* Whether this is the very first render. It has to be tracked as its own flag rather than inferred from
+     `seenKeys.size`, because the set is also empty after the till opens on an empty basket — and inferring
+     from it silently swallowed the animation for the first item added to an empty cart, which is the single
+     most common way a line ever enters this list. */
+  let firstRender = true;
+  let wasEmpty = null;
+  let lastTotal = '';
+
   const unsubscribe = cart.subscribe((s) => {
-    list.replaceChildren(...(s.items.length
-      ? s.items.map(row)
-      : [h('li', { class: 'cart-empty' }, icon('shopping_basket'), h('p', { class: 'body-l' }, 'The cart is empty.'), h('p', { class: 'body-m' }, 'Tap "Add to cart" or scan a barcode.'))]));
+    const keys = new Set(s.items.map((it) => it.key));
+    const rows = s.items.length
+      ? s.items.map((it) => {
+          const el = row(it);
+          // First render populates the set without animating, so opening the till does not play an
+          // entrance for a sale that is already in progress.
+          if (!firstRender && !seenKeys.has(it.key)) el.classList.add('is-new');
+          return el;
+        })
+      : [(() => { const el = h('li', { class: 'cart-empty' }, icon('shopping_basket'), h('p', { class: 'body-l' }, 'The cart is empty.'), h('p', { class: 'body-m' }, 'Tap "Add to cart" or scan a barcode.')); if (wasEmpty === false) el.classList.add('enter'); return el; })()];
+    list.replaceChildren(...rows);
+    seenKeys.clear();
+    for (const k of keys) seenKeys.add(k);
+    wasEmpty = s.items.length === 0;
+    firstRender = false;
     countChip.textContent = `${s.count} ${s.count === 1 ? 'item' : 'items'}`;
     waChip.hidden = !s.waCode;
     if (s.waCode) waChip.lastChild.textContent = ` From ${s.waCode}`;
@@ -129,7 +156,19 @@ export function renderCartPanel({ onCheckout, onClose }) {
       sumRow('Subtotal', money(s.subtotal)),
       s.discountAmount > 0 && sumRow(s.rule.type === 'percent' ? `Discount (${s.rule.value}%)` : 'Discount', `− ${money(s.discountAmount)}`)
     ].filter(Boolean));
-    totalEl.textContent = money(s.total);
+    /* Only when the figure itself changed, so a discount being typed into character by character nudges the
+       total as it moves and nothing at all happens while the cart sits idle. The class is removed before it
+       is re-added, because re-adding an animation to an element that already has it does nothing. */
+    const total = money(s.total);
+    if (total !== lastTotal) {
+      if (lastTotal && typeof totalEl.animate === 'function') {
+        totalEl.classList.remove('total-changed');
+        void totalEl.offsetWidth;
+        totalEl.classList.add('total-changed');
+      }
+      lastTotal = total;
+    }
+    totalEl.textContent = total;
     checkoutBtn.disabled = s.items.length === 0;
     if (s.rule.value === 0 && document.activeElement !== discountInput) discountInput.value = '';
   });

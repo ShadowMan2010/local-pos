@@ -12,13 +12,53 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <link rel="preload" href="fonts/bodoni-moda-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="css/m3.css">
+  <!-- Installable, and so it opens with no browser chrome eating the top of a landscape tablet. The
+       manifest is declared here and on no other page: the till deliberately does not become an app, because
+       an installed till opens on a stale version of itself more easily than a browser tab does. -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#1A6C5A">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Weighing">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" href="/favicon.ico" sizes="any">
 </head>
 <body>
-  <div id="app"></div>
+  <!-- Same boot screen as the till, and for the same reasons: the station is installed and launched from
+       the home screen with the network down as often as not, so this is the first thing the shop sees on a
+       tablet nobody is there to reload. The two images it uses are in the worker's shell below. -->
+  <div id="boot" role="status">
+    <div class="boot-inner">
+      <div class="boot-plate">
+        <span class="boot-shine boot-logo-shine">
+          <img class="boot-logo" src="logo.png" alt="" width="104" height="111">
+        </span>
+      </div>
+      <div class="boot-name">LOCAL POS</div>
+      <div class="boot-by">
+        <span class="boot-tagline">Built for Bharat by</span>
+        <span class="boot-shine boot-edupulse-shine">
+          <img class="boot-edupulse" src="edupulse-logo.png" alt="EduPulse" width="168" height="27">
+        </span>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Same deadline as the till's, inline for the same reason: this page is expected to work with no
+    // network, so anything that can keep the splash up is a real risk rather than a theoretical one.
+    setTimeout(function () {
+      var b = document.getElementById('boot');
+      if (b) b.remove();
+    }, 7000);
+  </script>
+
+  <div id="app" aria-busy="true"></div>
   <div id="snackbar" role="status" aria-live="polite"></div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="/vendor/qrcode.min.js"></script>
   <script type="module" src="js/weigh.js"></script>
 </body>
 </html>

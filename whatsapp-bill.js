@@ -41,13 +41,14 @@ const QR_SIZE = 300;
  *   items: {name: string, price: number, qty: number}[],
  *   total: number,
  *   phone?: string,
+ *   name?: string,
  *   method: 'upi'|'cash',
  *   upiVpa?: string
  * }} bill
  * @returns {Promise<Buffer>} PNG bytes
  */
 export async function buildBillImage(bill) {
-  const { storeName, code, items, total, phone, method, upiVpa } = bill;
+  const { storeName, code, items, total, phone, name, method, upiVpa } = bill;
   const wantsQr = method === 'upi' && Boolean(upiVpa);
   const hasWeight = items.some((i) => i.isWeight);
 
@@ -75,10 +76,23 @@ export async function buildBillImage(bill) {
 
   const itemBlockH = y;
   const weightNoteH = hasWeight ? 34 : 0;
-  const qrTop = PAD + 150 + itemBlockH + weightNoteH + 40;
+  // The customer's name gets a line of its own in the header, so everything below the header has to move
+  // down by the height of that line. Held in one number for that reason: the header offset, the total, the
+  // QR position and the canvas height all shift together, and a bill with a name on it has to be exactly as
+  // tall as one without — a canvas too short crops the total, which is the one line that must never go.
+  // One place decides whether this bill has a name, because the layout below and the drawing further down
+  // have to agree exactly. They used to decide separately — the height from a truthy check on the raw
+  // value, the drawing from a trimmed one — so a customer who typed only spaces got a reserved blank line
+  // and a 30px gap where their name should have been.
+  const nameRaw = String(name ?? '').trim();
+  const nameShown = nameRaw.length > 36 ? `${nameRaw.slice(0, 35)}…` : nameRaw;
+  const nameLineH = nameShown ? 30 : 0;
+  const headerH = 150 + nameLineH;
+  const itemsTop = PAD + headerH;
+  const qrTop = itemsTop + itemBlockH + weightNoteH + 40;
   const height = wantsQr
     ? qrTop + QR_SIZE + 150
-    : PAD + 150 + itemBlockH + weightNoteH + 40 + 90;
+    : itemsTop + itemBlockH + weightNoteH + 40 + 90;
 
   const parts = [];
   parts.push(`<rect width="${W}" height="${height}" fill="#ffffff"/>`);
@@ -88,13 +102,25 @@ export async function buildBillImage(bill) {
 
   const sub = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
   parts.push(`<text x="${PAD}" y="${PAD + 76}" font-size="20" fill="#49454f">${xml(sub)}${phone ? ' · ' + xml(phone) : ''}</text>`);
-  parts.push(`<line x1="${PAD}" y1="${PAD + 100}" x2="${AMT_X}" y2="${PAD + 100}" stroke="#e0e0e0" stroke-width="2"/>`);
 
-  for (const r of rows) {
-    parts.push(`<text x="${r.x}" y="${PAD + 150 + r.y}" font-size="${r.size}" fill="#1b1b1f"${r.anchor ? ` text-anchor="${r.anchor}"` : ''}>${xml(r.text)}</text>`);
+  // The name the customer typed when the bot asked what to write on the bill. It is printed because they
+  // were asked for it specifically — the bot says "What name should we write on the bill?" — and a bill that
+  // quietly leaves it off makes the question a lie.
+  //
+  // Capped rather than wrapped, because a bill is a fixed-width image and a very long name has to be
+  // shortened somewhere. 36 characters is well inside the width at this size, and it is more than any real
+  // name.
+  if (nameShown) {
+    parts.push(`<text x="${PAD}" y="${PAD + 106}" font-size="22" font-weight="600" fill="#1b1b1f">Name: ${xml(nameShown)}</text>`);
   }
 
-  const totalY = PAD + 150 + itemBlockH + 8;
+  parts.push(`<line x1="${PAD}" y1="${PAD + 100 + nameLineH}" x2="${AMT_X}" y2="${PAD + 100 + nameLineH}" stroke="#e0e0e0" stroke-width="2"/>`);
+
+  for (const r of rows) {
+    parts.push(`<text x="${r.x}" y="${itemsTop + r.y}" font-size="${r.size}" fill="#1b1b1f"${r.anchor ? ` text-anchor="${r.anchor}"` : ''}>${xml(r.text)}</text>`);
+  }
+
+  const totalY = itemsTop + itemBlockH + 8;
   parts.push(`<line x1="${PAD}" y1="${totalY - 26}" x2="${AMT_X}" y2="${totalY - 26}" stroke="#e0e0e0" stroke-width="2"/>`);
   parts.push(`<text x="${PAD}" y="${totalY + 14}" font-size="28" font-weight="700" fill="#1b1b1f">Total</text>`);
   parts.push(`<text x="${AMT_X}" y="${totalY + 14}" font-size="28" font-weight="700" text-anchor="end" fill="#1b1b1f">${xml(money(total))}</text>`);

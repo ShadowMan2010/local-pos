@@ -5,6 +5,27 @@
 const money = (n) => `₹${(Math.round(n * 100) / 100).toFixed(2)}`;
 const roundKg = (n) => Math.round(n * 1000) / 1000;
 
+// Words a customer may type instead of the English command. The English word is always accepted; the
+// Bengali ones are kept because a Bengali-speaking customer may type the word they know, and the bot
+// answers in English regardless. The bot's own messages never advertise them.
+const CMD = {
+  menu: ['menu', 'মেনু', 'তালিকা'],
+  cancel: ['cancel', 'বাতিল'],
+  yes: ['yes', 'y', 'ha', 'haa', 'হ্যাঁ', 'হ্যা', 'জি'],
+  cash: ['cash', 'no', 'n', 'ক্যাশ', 'না'],
+  upi: ['upi', 'gpay', 'googlepay', 'phonepe', 'phonepe', 'paytm', 'যপি'],
+  skip: ['skip', 'na', 'nahi', 'none', 'no name', '-', 'x', 'নাই', 'এড়িয়ে', 'নাম নেই', 'কিছু না'],
+  // Only used to opt somebody out of the announcements the shop sends now and then. Nothing here
+  // advertises it; the announcement itself says how to stop receiving them.
+  stop: ['stop', 'unsubscribe', 'optout', 'opt out']
+};
+
+/** True when the customer's message means the given command, in either script. */
+export const isCmd = (text, cmd) => CMD[cmd].includes(String(text ?? '').trim().toLowerCase());
+
+/** True when the customer is asking not to be sent announcements any more. */
+export const isOptOut = (text) => isCmd(text, 'stop');
+
 /**
  * Products a customer can order over WhatsApp: anything in stock. Items sold by weight are
  * included — the customer declares how many kilos they want and the shop confirms the real weight
@@ -35,7 +56,12 @@ export function buildCatalogText(storeName, products) {
       `Example: ${firstWeightAt + 1}x1.5  (means 1.5 kg of ${list[firstWeightAt].name})`
     ] : []),
     '',
-    'Write "menu" to see this list again, or "cancel" to cancel your order.'
+    'Write "menu" to see this list again, or "cancel" to cancel your order.',
+    // The one line that makes the complaint feature findable. Everything else about it works on
+    // natural language, but a customer who does not know they can complain will never find out, and
+    // this is the only place they are told.
+    `Problem with an order? Just write what happened, or write "complain".`,
+    'Write "help" to see everything I understand.'
   ].join('\n');
 }
 
@@ -127,6 +153,75 @@ export const buildBillCaptionText = (orderCode, method) =>
 
 export const buildUpiUnavailableText = () =>
   'Sorry, online payment is not available at the moment. Please pay cash at the counter. Thank you!';
+
+/* ---------- payment screenshots ---------- */
+// After the bot sends a bill with a UPI QR, the customer pays in their UPI app and sends a
+// screenshot of the payment. It is filed against their most recent order so the shop can check the
+// money arrived, and the customer is told it got there — a screenshot that vanishes into silence
+// reads as "the shop ignored my payment".
+
+/** Sent when a payment screenshot was received and filed against an order. */
+export const buildPaymentProofSavedText = () =>
+  '✅ Thank you! I have passed your payment screenshot to the shop. They will confirm your order shortly.';
+
+/** Sent when an image arrived but no order could be found to attach it to. */
+export const buildNoOrderForProofText = () =>
+  'I can only keep a payment screenshot for an order. Write "menu" to place an order, and send the screenshot here after your bill.';
+
+/** Sent when the image itself could not be downloaded or read. */
+export const buildPaymentProofUnreadableText = () =>
+  'Sorry, I could not open that image. Please send the payment screenshot again.';
+
+/** Confirms somebody who asked not to receive the shop's announcements any more. */
+export const buildOptOutText = () =>
+  'Done — you will not get announcement messages from us again. Write "menu" any time to place an order.';
+
+/* ---------- announcements ---------- */
+/**
+ * The one-off message the shop sends its saved customers about voice ordering. Voice notes are
+ * translated to an order read back for confirmation, so the message says what a customer should
+ * actually do (press the microphone) rather than naming the feature.
+ *
+ * Kept as a builder (not a bare string) because it is stored on disk in the send log, and because
+ * the shop name has to be in it — an announcement that does not say who it is from looks like spam.
+ */
+export function buildAnnouncementText(storeName) {
+  const store = String(storeName || 'Our shop');
+  return [
+    `📣 *${store}* now takes orders by *voice note* on WhatsApp!`,
+    '',
+    'Just hold the microphone and say what you need — for example "2 kg rice and a packet of milk".',
+    'I will write it down and read it back for you to confirm before billing.',
+    '',
+    'You can still type your order the usual way — write "menu" to see the items.',
+    '',
+    'Reply "stop" if you would rather not get messages like this again.'
+  ].join('\n');
+}
+
+/**
+ * The phone numbers an announcement should go to: every saved customer, minus anyone who has asked
+ * to stop. Kept pure and here rather than inline in server.js so the two ways this goes wrong —
+ * a customer being messaged twice, or somebody who said "stop" being messaged anyway — are testable
+ * without a WhatsApp account.
+ *
+ * Numbers are normalised to their 10 digits and de-duplicated, because customers.json is keyed by
+ * number but may carry older entries in other shapes.
+ *
+ * @param {Record<string, unknown>} customers the customers file, keyed by phone
+ * @param {Record<string, unknown>} optOut phone -> true for anyone who asked to stop
+ * @returns {string[]} sorted 10-digit numbers
+ */
+export function announcementRecipients(customers = {}, optOut = {}) {
+  const seen = new Set();
+  for (const key of Object.keys(customers || {})) {
+    const d = String(key ?? '').replace(/\D/g, '');
+    if (d.length !== 10) continue;      // not an Indian mobile number we can actually send to
+    if (optOut?.[d]) continue;          // they asked us to stop
+    seen.add(d);
+  }
+  return [...seen].sort();
+}
 
 export const buildWelcomeText = (storeName) =>
   `🙏 Welcome to ${storeName}!\n\nWrite "menu" on this WhatsApp number to start your order.`;
@@ -331,6 +426,207 @@ const NAME_SKIP_WORDS = ['skip', 'na', 'nahi', 'none', '-', 'x', 'no name'];
 const NAME_PAYMENT_WORDS = ['cash', 'no', 'n', 'upi', 'gpay', 'phonepe', 'paytm'];
 
 /**
+ * A customer the shop already knows is no longer asked their name, so they need a way to fix it
+ * without cancelling and starting again.
+ *
+ * The phrase is required on purpose. Reading any unrecognised message as a name would mean a typo —
+ * "casg" for "cash" — silently becomes the name on a printed bill and on the customer's record, and
+ * that is much worse than having to ask.
+ * -> { name: string } or null when the message is not a name change
+ */
+export function parseNameCommand(text) {
+  // The capture is open-ended and cut afterwards, so a long name is truncated rather than making the
+  // whole message unrecognised. "to" is optional because "change name to X" is how people say it.
+  const m = /^(?:please\s+)?(?:change|update|set|correct)?\s*(?:my\s+)?name(?:\s+is)?(?:\s+to)?\s*[:\-]?\s+(.+)$/i
+    .exec(text.trim());
+  if (!m) return null;
+  // The payment words are not names; "name: upi" is someone changing the subject, not their name.
+  if (NAME_PAYMENT_WORDS.includes(m[1].trim().toLowerCase())) return null;
+  return { name: m[1].trim().replace(/\s+/g, ' ').slice(0, 40) };
+}
+
+/** Confirms a name the customer has just corrected. */
+export const buildNameChangedText = (name) =>
+  `Thank you, ${name}. I have updated the name on your orders.\n\nWrite "menu" to see the item list.`;
+
+/* ---------- complaints ---------- */
+// How a customer actually complains, in the words people really use — including the ones that are
+// not the word "complaint" at all. Missing these means the message falls through to "I did not
+// understand that", which is the worst possible answer to someone who is already annoyed.
+const COMPLAINT_WORDS = [
+  'complain', 'complaint', 'complaints', 'problem', 'issue', 'wrong item', 'wrong item delivered',
+  'damaged', 'broken', 'torn', 'leaking', 'missing item', 'not delivered', 'late delivery',
+  'refund', 'bad quality', 'not good', 'unsatisfied', 'dissatisfied', 'poor quality',
+  'short weight', 'less quantity', 'wrong quantity', 'expired', 'spoiled', 'rotten', 'no delivery',
+  'did not come', 'didnt come', 'not working', 'faulty', 'wrong', 'mix up', 'mismatched',
+  // Bengali. Enumerated words can never cover a whole language, so this list leans on the terms that
+  // carry the complaint itself rather than trying to be complete.
+  'অভিযোগ', 'সমস্যা', 'খারাপ', 'ভাঙা', 'ছিঁড়া', 'ছেঁড়া', 'নষ্ট', 'ফেরত', 'টাকা ফেরত', 'ডেলিভারি',
+  'দেরি', 'সময়মতো', 'আসেনি', 'পাঠানো হয়নি', 'ভুল', 'কম', 'পরিবর্তন'
+];
+
+/**
+ * Word order is the thing a fixed list cannot survive.
+ *
+ * "bad quality" is in the list above, but the ways people actually write are "the quality is very bad",
+ * "quality is not good" and "this quality is poor" - none of which contain the listed phrase, so all
+ * three fell through to the order parser and the customer was told the bot did not understand. That is
+ * the worst possible answer to somebody who is already unhappy, and it is the complaint that was
+ * reported from the live shop.
+ *
+ * These patterns are written to catch the meaning wherever the words fall, rather than one fixed
+ * spelling. They are deliberately written to need a complaint-ish word *and* a topic word, so that an
+ * order line ("2 rice", "1 kg oil") cannot match: a bare noun on its own is never enough.
+ */
+const COMPLAINT_PATTERNS = [
+  // Quality, said the natural way round.
+  /\b(quality|product|service|behaviour|behavior|packing|packaging|item|items|goods)\b[^.?!]{0,25}\b(bad|poor|low|terrible|awful|horrible|not good|not ok|not up to|not up|below standard|not proper|not right)\b/,
+  /\b(bad|poor|low|terrible|awful|horrible|worst)\b[^.?!]{0,25}\b(quality|product|service|packing|behaviour|behavior|condition)\b/,
+  // Unhappiness, said any of the usual ways.
+  /\b(not|wasn'?t|isn'?t|never|don'?t)\s+(happy|satisfied|pleased|impressed)\b/,
+  /\b(very|really|so|too|extremely|quite|very much)\s+(bad|poor|disappointed|disappointing|upset|angry|unhappy|frustrated|unacceptable)\b/,
+  /\bdisappointed\b/,
+  // Rude or poor treatment - one of the most common reasons anyone writes in at all.
+  /\b(rude|unpolite|impolite|misbehaved|misbehave|unhelpful|argument|argued|fought|shouted|abusive|cheating)\b/,
+  // Money: no change, short change, overcharged, wrong amount.
+  /\b(no|not|did ?n[o']?t|never)\s+(give|gave|give back|return|returned|hand|handed|send|send back)\b[^.?!]{0,30}\b(change|money|cash|note|notes|coin|coins|rupees)\b/,
+  /\b(overcharged|over charge|extra charge|charged extra|charged more|wrong amount|less money|short change|extra change|extra money)\b/,
+  // Missing, wrong, short or extra items - the everyday phrasing, not just "missing item". The nouns
+  // all take an optional plural, because "only 2 packets came" is the same complaint as "missing item"
+  // and a \b after a singular noun silently fails to match the plural.
+  /\b(missing|lost|without|no|not|less|fewer|extra|additional|different|wrong|incorrect|only)\b[^.?!]{0,25}\b(items?|pieces?|qtys?|quantit(?:y|ies)|kg|kgs|kilo|kilos|grams?|g|gm|bags?|parcels?|packages?|packets?|products?|goods?|pieces?)\b/,
+  /\b(wrong|incorrect|different|not the same|not matching|mismatch)\b[^.?!]{0,30}\b(items?|products?|orders?|deliver(?:y|ies)|address|names?|quantit(?:y|ies)|amount|bills?)\b/,
+  // Short weight, which is a different complaint from a short count and is worth filing on its own.
+  /\b(short|less|fewer|under|not enough|insufficient|only|just)\b[^.?!]{0,25}\b(weight|weighed|weigh|kg|kgs|kilo|kilos|quantit(?:y|ies)|qty|amount|grams?|g|gm)\b/,
+  // A weight or count that does not match what was asked for: "only 900g not 1kg", "2kg but I paid
+  // for 5kg". Written this way because the numbers are the complaint, and neither is a listed word.
+  /\b(only|just|not|less|short|instead)\b[^.?!]{0,30}\b\d+\s*(g|gm|kg|kgs|kilo|kilos|gram|grams|pcs|pieces|items?)\b/,
+  // Late, or not delivered at all. "Arrived" and "reach" are in here alongside "come" and "delivered"
+  // because that is how most people actually phrase it, and the misspellings are deliberate: nobody
+  // types carefully while standing at a counter waiting for their order.
+  /\b(late|delay|delayed|delaying|taking too long|took too long|not come|never came|did not come|didn'?t come|not received|did not receive|didn'?t receive|not recieve|not recieved|never received|still not|not delivered|never delivered|no delivery|nothing came|not arrive|never arrive|did not arrive|didn'?t arrive|not arrived|never arrived|has not arrived|hasn'?t arrived|not reached|never reached|still waiting)\b/,
+  // Broken, spoiled, expired - and the everyday ways people describe it.
+  /\b(rotten|spoiled|spoilt|expired|expiry|leaking|leaked|melted|rusty|corroded|mouldy|moldy|insect|insects|bug|bugs|worm|worms|cockroach|flies|dirty|dusty|already opened|open packet|tampered)\b/,
+  // Fake or a duplicate of something else.
+  /\b(fake|duplicate|duplicated|copy|imitation|nothing like|not original|not genuine)\b/,
+  /\bwaste\s+(of\s+)?(my\s+)?(money|time)\b/,
+  // Asking for something back, however they put it. "Change" is deliberately not in the return group:
+  // "you did not give me change" is a money complaint and is caught above, while bare "change" is
+  // also a perfectly ordinary word in an order.
+  /\b(money back|refund|return the money|give me (my )?money back|compensate|compensation|exchange|replace|replacement)\b/,
+  /\b(i want to|i'?d like to|can i|please|want to|need to|will you)\s*(return|send back|give back|take back|replace|exchange|refund)\b/,
+  /\breturn\s+(the|this|that|my)?\s*(item|items|product|products|order|goods|parcel|package|packet)\b/,
+  // A quantity that does not match what was paid for: "2kg but I paid for 5kg". The "but" comes
+  // first, so the pattern has to allow the complaint word to sit anywhere in the clause.
+  /\bbut\b[^.?!]{0,35}\b(paid|pay|gave|given|ordered|booked|should|supposed)\b[^.?!]{0,25}\b\d+\s*(kg|kgs|g|gm|gram|grams|rupees|rs)\b/,
+  // The person who turned up with the order.
+  /\b(delivery boy|delivery man|deliverer|rider|courier|agent|delivery)\b[^.?!]{0,35}\b(rude|late|drank|ate|took|stole|refuse|refused|left|didn'?t|did not|not come|never came|wrong|damaged|broken|was not|not there)\b/,
+];
+
+/**
+ * Whether a message is a customer raising a problem with an order.
+ *
+ * Only used when the customer is not mid-order, so a legitimate order line can never be mistaken for
+ * a complaint: "2 rice" and "rice was broken" are different lengths and shapes, and a bare product
+ * name on its own is not in this list.
+ */
+export function mentionsComplaint(text) {
+  const t = text.trim().toLowerCase();
+  if (!t || t.length > 400) return false;
+  if (COMPLAINT_WORDS.some((w) => t.includes(w))) return true;
+  return COMPLAINT_PATTERNS.some((re) => re.test(t));
+}
+
+// Messages that announce a problem without describing one. Listing these beats trying to measure
+// "enough information" by counting words: counting either keeps vague ones ("i have a problem") or
+// throws away real ones, because the words that carry the meaning are ordinary English words.
+const VAGUE_COMPLAINTS = new Set([
+  'complaint', 'complaints', 'problem', 'issue', 'problems', 'issues', 'refund', 'bad', 'damaged',
+  'broken', 'torn', 'wrong', 'poor', 'not good', 'not ok', 'not okay', 'bad quality', 'poor quality',
+  'help', 'urgent', 'please', 'hello', 'hi', 'hey',
+  'i have a problem', 'i have a complaint', 'i have an issue', 'i have a problem with my order',
+  'there is a problem', 'there is an issue', 'there is a problem with my order',
+  'problem with my order', 'issue with my order', 'order problem', 'delivery problem',
+  // "wrong item", "missing item" and "short weight" are deliberately NOT here: they name the problem,
+  // so they are worth filing on their own rather than sending the customer another question.
+  'সমস্যা', 'সমস্যা হয়েছে', 'অভিযোগ', 'অভিযোগ আছে', 'সাহায্য', 'ফেরত', 'খারাপ'
+]);
+
+/**
+ * Decides whether a complaint message says enough to file, and returns the text to file.
+ *
+ * The message stored is always the customer's own words. An earlier version stripped the trigger words
+ * out before saving, which turned "I want a refund for the broken oil" into "I want a for the oil" —
+ * useless to whoever has to act on it, and nonsense for the AI writing the reply. The trigger words
+ * are now only used to recognise a complaint, never to rewrite it.
+ *
+ * @returns {string|null} the text to file, or null when it is too vague and the customer must be asked
+ */
+export function complaintDetail(text) {
+  const original = text.trim().slice(0, 500);
+  if (!original) return null;
+  // Compared loosely: case, spacing and trailing punctuation are not the complaint.
+  //
+  // \p{M} has to be allowed through, and this is not a detail: Bengali, Hindi, Arabic and most other
+  // scripts build words from combining marks, and those marks are not letters. Stripping everything
+  // that is not a letter or digit silently cuts "সমস্যা" down to "সমস য", so every Bengali complaint
+  // would fail to match and be treated as a vague one forever.
+  const plain = original.toLowerCase().replace(/[^\p{L}\p{N}\p{M}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!plain) return null;
+  if (VAGUE_COMPLAINTS.has(plain)) return null;
+  // A single word is a trigger, not a description. Two or more is something to act on.
+  if (plain.split(' ').filter(Boolean).length < 2) return null;
+  return original;
+}
+
+/**
+ * Decides what should happen to an incoming message, for complaint purposes only.
+ *
+ * Exported and used by whatsapp.js rather than the condition being written inline there, because that
+ * condition is the whole feature. It used to be inline, untested, and broken in the only way that
+ * matters: a customer wrote "complain" and was told the bot did not understand, and nothing noticed,
+ * because the tests called the helpers and never the routing. One function that both the handler and
+ * the tests call cannot drift away from them.
+ *
+ * @param {string} text what the customer wrote
+ * @param {string} step which step of the order flow they are on
+ * @returns {{kind:'none'}|{kind:'file',detail:string}|{kind:'ask'}|{kind:'later'}}
+ */
+export function complaintRoute(text, step) {
+  if (!mentionsComplaint(text)) return { kind: 'none' };
+  // While they are confirming, naming or paying, the complaint is not acted on: a half-built order
+  // must not be lost to a complaint, and "the packet was torn" contains words that parse as order
+  // items. It used to be dropped silently here, so at the payment screen those words were read as an
+  // order line instead. Saying "finish first, then tell me" is the difference between a fix and a
+  // second problem.
+  if (['confirming', 'naming', 'payment'].includes(step)) return { kind: 'later' };
+  const detail = complaintDetail(text);
+  return detail ? { kind: 'file', detail } : { kind: 'ask' };
+}
+
+/** Said when a customer complains part-way through paying, so the complaint is held, not dropped. */
+export const buildComplainLaterText = () =>
+  'Finish paying first, then tell me what happened with your order and I will pass it to the shop.';
+
+/** Asked when a customer complains but has not yet said what about. */
+export const buildComplaintPromptText = () => [
+  `I am sorry to hear that. Please tell us what went wrong and we will get it sorted out.`,
+  ``,
+  `You can write it all in one message — for example "the rice packet was torn".`,
+  ``,
+  `Write "menu" if you would rather carry on with your order.`
+].join('\n');
+
+/** Sent when the AI could not be reached, so the customer still gets a reference to quote. */
+export const buildComplaintSavedText = (id, storeName) => [
+  `We are sorry about this, and we have noted it down.`,
+  ``,
+  `Your complaint reference is ${id}. Please keep it — ${storeName || 'the shop'} can look it up straight away.`,
+  ``,
+  `${storeName || 'The shop'} will call you back shortly to sort it out.`
+].join('\n');
+
+/**
  * Reads the customer's answer to the name question. The reply is free text, but two kinds of
  * message have to be taken out before it can be read as a name: the payment words (someone typing
  * "cash" is telling us how to pay, not that their name is Cash) and the ways people decline to give
@@ -356,4 +652,42 @@ export const buildDeliveryBoyHelpText = () => [
 
 export const buildCancelledText = () => 'Your order has been cancelled. Write "menu" to start a new one.';
 
-export const buildHelpText = () => 'I did not understand that 🙏 Write "menu" to see the item list.';
+// Two different messages that used to be the same string, which is why somebody typing "help" was
+// told the bot had not understood them.
+export const buildHelpText = (storeName = 'the shop') => [
+  `🛒 *${String(storeName || 'the shop')}*`,
+  '',
+  'Here is everything I understand:',
+  '• "menu" — the item list',
+  '• "1,1,3" or "2x1.5" — order items (number, or number x kilos for loose items)',
+  '• "yes" — confirm your order',
+  '• "upi" or "cash" — how you want to pay',
+  '• "cancel" — cancel the order you are making',
+  '• "complain" — report a problem with an order, then tell me what happened',
+  '• "name Rahim" — change the name on your order',
+  '',
+  'You can also send a voice note saying what you need — I will write it down and read it back to you.',
+  '',
+  'If you pay by UPI, send a screenshot of the payment here after your bill so the shop can check it received.',
+  '',
+  'To report a problem, just write what happened in your own words — you do not need any special word.'
+].join('\n');
+export const buildNotUnderstoodText = () => 'I did not understand that 🙏 Write "menu" to see the item list.';
+
+/* ---------- voice notes ---------- */
+
+/**
+ * Sent the moment a voice note arrives, before the transcript is ready. Speech-to-text plus the model
+ * take a few seconds, and a customer who just spoke into their phone needs to know it landed rather
+ * than assume it failed and send it three more times.
+ */
+export const buildVoiceListeningText = () => '🎤 One moment — I am listening to your voice note…';
+
+/** Said when the shop has not switched voice ordering on. The written flow still works, and is named. */
+export const buildVoiceOffText = () =>
+  'I am sorry, voice ordering is not switched on here yet. Please write your item numbers, or write "menu".';
+
+/** Said when the voice note could not be read at all — it could not be fetched, or yielded no words. */
+export const buildVoiceUnclearText = () =>
+  'Sorry, I could not make out that voice note. Please try again, or write your items and I will take the order.';
+

@@ -1,6 +1,7 @@
 // Module 3 — bill preview, 58/80 mm thermal printing and the dual-QR payment flow.
 import { h, icon, money, snack, qrDataUrl } from '../ui.js';
-import { preparePayment } from '../payment.js';
+import * as sfx from '../sfx.js';
+import { preparePayment, displayCustomerName } from '../payment.js';
 import { pushToDisplay } from '../display-link.js';
 import { saveOrder, listDeliveryBoys } from '../api.js';
 import { getPaper, setPaper, addPendingOrder } from '../store.js';
@@ -88,12 +89,17 @@ export function openReceiptDialog({ config, order, onPaid }) {
     paperEl.dataset.paper = paper;
     paperEl.replaceChildren(buildReceipt(order, config, { qrSrc, paid, method }));
   };
-  const setStatus = (kind, text) => {
-    statusEl.className = `pay-status ${kind === 'error' || kind === 'ok' ? kind : ''}`.trim();
-    statusEl.replaceChildren(
-      kind === 'progress' ? h('span', { class: 'progress' }) : icon(kind === 'error' ? 'error' : 'check_circle'),
-      h('span', { class: 'body-m' }, text));
-  };
+    const setStatus = (kind, text) => {
+      statusEl.className = `pay-status ${kind === 'error' || kind === 'ok' ? kind : ''}`.trim();
+      statusEl.replaceChildren(
+        kind === 'progress' ? h('span', { class: 'progress' }) : icon(kind === 'error' ? 'error' : 'check_circle'),
+        h('span', { class: 'body-m' }, text));
+      // Only failures are announced here. 'ok' is used both for "the QR is ready" and for "the money is
+      // in", and only one of those is worth interrupting a shop for - the other is the normal run-up to
+      // it. The payment sound is played by markPaid, at the moment the sale actually closes.
+      if (kind === 'error') sfx.play('error');
+    };
+
 
   async function startPayment() {
     setStatus('progress', displayMode ? 'Sending QR to the customer display…' : 'Generating payment QR…');
@@ -136,10 +142,22 @@ export function openReceiptDialog({ config, order, onPaid }) {
       addPendingOrder(order);
       setStatus('error', `Paid by ${m}, but the server could not save the bill. It is kept on this device and will be sent again.`);
     }
+    /* The thank-you on the customer screen, which is the only part of a sale the customer actually gets
+       to see the end of. It is pushed before onPaid() so the two screens agree even if saving the bill
+       was slow, and its failure is swallowed on purpose: the money is already taken and the bill is
+       already saved, so an unreachable customer display is not something to report as a failed sale at
+       the counter. The cashier is told separately, by the note below the till's own status line. */
     if (displayMode) {
-      pushToDisplay(config.displayUrl, { type: 'paid', storeName: config.storeName, amount: order.total })
+      const thanks = {
+        type: 'paid',
+        storeName: config.storeName,
+        amount: order.total,
+        method: m,
+        customerName: displayCustomerName(order)
+      };
+      pushToDisplay(config.displayUrl, thanks)
         .then(() => setTimeout(() => pushToDisplay(config.displayUrl, { type: 'idle', storeName: config.storeName }).catch(() => {}), 4000))
-        .catch(() => {});
+        .catch(() => snack('Bill saved, but the customer display did not confirm it', 5000, 'warn'));
     }
     onPaid(order, saved);
   }

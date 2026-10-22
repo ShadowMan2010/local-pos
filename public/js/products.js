@@ -13,6 +13,8 @@ const normalize = (p) => ({
   category: p.category || '',
   image: p.image || '',
   emoji: p.emoji || '',
+  // '' and null both mean "not recorded yet", kept as null so it is never read as a free item.
+  cost: p.cost == null || p.cost === '' ? null : Number(p.cost),
   soldByWeight: Boolean(p.soldByWeight) // true: price is per kg, stock is kg — sold via the weighing station
 });
 
@@ -49,7 +51,7 @@ export async function saveProduct(input) {
   const p = normalize(input);
   if (!p.sku || !p.name) throw new Error('SKU and name are required');
   if (p.price < 0 || p.stock < 0) throw new Error('Price and stock cannot be negative');
-  const body = { sku: p.sku, name: p.name, price: p.price, stock: p.stock, category: p.category, emoji: p.emoji, image: p.image, soldByWeight: p.soldByWeight };
+  const body = { sku: p.sku, name: p.name, price: p.price, stock: p.stock, category: p.category, emoji: p.emoji, image: p.image, soldByWeight: p.soldByWeight, cost: p.cost == null ? '' : p.cost };
 
   if (input.id) {
     const { product } = await api.updateProduct(input.id, body);
