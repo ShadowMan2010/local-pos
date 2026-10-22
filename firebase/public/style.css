@@ -162,6 +162,16 @@ body {
     background-clip: text;
 }
 
+.hero-tagline {
+    display: inline-block;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--primary);
+    margin-bottom: 20px;
+}
+
 .hero-subtitle {
     font-size: 18px;
     color: var(--on-surface-variant);
