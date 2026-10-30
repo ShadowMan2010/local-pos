@@ -13,7 +13,7 @@ import { openComplaintsDialog } from './complaints-dialog.js';
 import { initBarcodeScanner } from '../barcode.js';
 import { openCameraScanner } from '../camera-scan.js';
 import { loadProducts, findBySku, getProducts } from '../products.js';
-import { newOrderId, redeemWeighTicket, listWaOrders, listDeliveries, listComplaints } from '../api.js';
+import { newOrderId, redeemWeighTicket, listWaOrders, listDeliveries, listComplaints, checkForUpdate } from '../api.js';
 import { retryPendingOrders } from '../store.js';
 import * as sfx from '../sfx.js';
 import * as cart from '../cart.js';
@@ -110,14 +110,17 @@ export function renderDashboard(root, { config, onOpenSettings }) {
   soundBtn.addEventListener('click', () => toggleMute(soundBtn));
   paintSoundBtn(soundBtn);
 
-  const settingsBtn = iconBtn('settings', () => { runCleanups(); onOpenSettings(); }, 'Store settings');
+  const openSettings = () => { runCleanups(); onOpenSettings(); };
+  const updateBtn = iconBtn('system_update', openSettings, 'Update available');
+  updateBtn.hidden = true;
+  const settingsBtn = iconBtn('settings', openSettings, 'Store settings');
 
   const bar = h('header', { class: 'app-bar' },
     icon('storefront'),
     h('h1', { class: 'title-l app-title' }, config.storeName), // store name comes from the saved configuration
     status, modeChip,
     h('span', { class: 'spacer' }),
-    productsBtn, customersBtn, waBtn, delBtn, cpxBtn, cameraBtn, summaryBtn, reportsBtn, themeBtn, soundBtn, cartToggle, settingsBtn);
+    productsBtn, customersBtn, waBtn, delBtn, cpxBtn, cameraBtn, summaryBtn, reportsBtn, themeBtn, soundBtn, cartToggle, updateBtn, settingsBtn);
 
   /* ---------- catalog + cart ---------- */
   const catalog = renderCatalog({ onAdd: addProduct, onScan: (code) => handleScan(code) });
@@ -142,6 +145,20 @@ export function renderDashboard(root, { config, onOpenSettings }) {
   reloadProducts().catch((err) => snack(`Could not load products: ${err.message}`, 6000));
   // bills that could not be saved earlier (for example the Wi-Fi dropped) are sent again now
   retryPendingOrders().then((n) => { if (n) { snack(`${n} earlier ${n === 1 ? 'bill was' : 'bills were'} saved on the server`, 4000, 'success'); reloadProducts().catch(() => {}); } });
+
+  checkForUpdate().then((r) => {
+    if (!r.updateAvailable) return;
+    updateBtn.hidden = false;
+    const label = `Update to ${r.latest} available`;
+    updateBtn.title = label;
+    updateBtn.setAttribute('aria-label', label);
+    let announced = false;
+    try { announced = sessionStorage.getItem('pos.update.announced') === r.latest; } catch { /* private mode */ }
+    if (!announced) {
+      snack(`Update ${r.latest} is available — open Settings to install it`, 8000, 'warn');
+      try { sessionStorage.setItem('pos.update.announced', r.latest); } catch { /* private mode */ }
+    }
+  }).catch(() => {});
 
   // WhatsApp orders (if the feature is set up): a small badge, checked every few seconds
   // A WhatsApp order arriving is the single most important thing a till can be told about: it is a

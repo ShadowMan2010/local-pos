@@ -472,6 +472,11 @@ export function restartServer() {
       console.error('A restarted copy restarted itself again. Not doing that a second time.');
       return false;
     }
+    if (process.env.INVOCATION_ID) {
+      console.log('Restarting the till to finish the update…');
+      setTimeout(() => process.exit(0), 400);
+      return true;
+    }
     console.log('Restarting the till to finish the update…');
     const out = logStream();
     // env is passed through as-is plus the child marker; the parent is replaced, not forked twice.

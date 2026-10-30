@@ -3,8 +3,9 @@ import { h, icon, money, snack, qrDataUrl } from '../ui.js';
 import * as sfx from '../sfx.js';
 import { preparePayment, displayCustomerName } from '../payment.js';
 import { pushToDisplay } from '../display-link.js';
-import { saveOrder, listDeliveryBoys } from '../api.js';
+import { saveOrder, listDeliveryBoys, registerPendingPayment, cancelPendingPayment } from '../api.js';
 import { getPaper, setPaper, addPendingOrder } from '../store.js';
+import { onAdminEvent } from '../admin-bus.js';
 
 const fmtDate = (iso) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 const hr = () => h('div', { class: 'rc-hr' });
@@ -80,6 +81,8 @@ export function openReceiptDialog({ config, order, onPaid }) {
   let qrSrc = null;
   let paid = false;
   let method = '';
+  // Unsubscribe from the admin-bus when the dialog closes (or payment completes).
+  let unsubAdmin = null;
 
   const paperEl = h('div', { class: 'paper' });
   const statusEl = h('div', { class: 'pay-status' });
@@ -114,6 +117,20 @@ export function openReceiptDialog({ config, order, onPaid }) {
       } else {
         setStatus('ok', 'QR is showing on the customer display. Confirm once the customer has paid.');
       }
+      // Register this bill with the payment-watcher so the server can match an incoming bank
+      // notification to it. Fails silently — the feature is optional and must not block billing.
+      registerPendingPayment(order.id, order.total).catch(() => {});
+      // Auto-confirm if the Android companion app fires a signal for this bill.
+      if (!unsubAdmin) {
+        unsubAdmin = onAdminEvent((event) => {
+          if (event.type !== 'upi-auto-confirmed') return;
+          if (event.id !== order.id) return; // a different bill on another device
+          if (paid) return; // already confirmed (manual tap raced with the notification)
+          const source = event.source || 'bank notification';
+          snack(`₹${event.amount} received via ${source} — auto-confirmed`, 4000, 'success');
+          markPaid('upi');
+        });
+      }
     } catch (err) {
       setStatus('error', err.message);
     }
@@ -121,6 +138,9 @@ export function openReceiptDialog({ config, order, onPaid }) {
 
   async function markPaid(m) {
     paid = true; method = m;
+    // Stop listening for further payment signals and remove from pending map.
+    if (unsubAdmin) { unsubAdmin(); unsubAdmin = null; }
+    cancelPendingPayment(order.id).catch(() => {});
     Object.assign(order, { status: 'paid', paymentMethod: m, paidAt: new Date().toISOString() });
     // Only meaningful for a WhatsApp order: the server mints the code and messages this boy.
     if (isDelivery && deliveryBoy) order.deliveryBoy = deliveryBoy;
@@ -221,6 +241,11 @@ export function openReceiptDialog({ config, order, onPaid }) {
 
   dlg.addEventListener('close', () => {
     if (!paid && displayMode) pushToDisplay(config.displayUrl, { type: 'idle', storeName: config.storeName }).catch(() => {});
+    // Clean up payment-watcher registration if the cashier closed without paying.
+    if (!paid) {
+      if (unsubAdmin) { unsubAdmin(); unsubAdmin = null; }
+      cancelPendingPayment(order.id).catch(() => {});
+    }
     dlg.remove();
   });
 

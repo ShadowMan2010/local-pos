@@ -4,7 +4,37 @@ All notable changes to LOCAL POS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-10-30
+
+### Automatic UPI confirmation
+
+- The till can now confirm a UPI payment by itself when the shop's Android phone hears the bank/UPI
+  notification. The receipt registers the open bill and its amount, the companion app posts the
+  notification to `/api/payment-signal`, the server matches the amount, and the bill closes exactly
+  as if the cashier had tapped **UPI received**.
+- Signals are refused unless a shared secret is set, and a signal can only close a bill that is
+  already open on the till. Cash and manual UPI entry are untouched.
+- A duplicate notification is ignored once the bill is paid, and a pending bill expires after 30
+  minutes.
+
+### Updates from inside the till
+
+- **Updates** in Settings shows the running version, checks GitHub for a newer published release,
+  and installs it with one button. The till restarts itself and reloads.
+- A small update button appears in the top bar when a newer release is published, with a one-time
+  notice per session.
+- Only published releases count; drafts and pre-releases are ignored. The download is size-checked
+  before anything is replaced, and the previous version is kept so a release that cannot start is
+  rolled back by the launcher.
+- Shop data (`data/`), products and bills are never part of the application files an update replaces.
+- The release archive now includes every server module and `updater.js` itself. The 0.2.0 package
+  omitted several modules and could not have been updated in place.
+
+### Report downloads
+
+- **Fixed:** the CSV buttons in Reports downloaded a `401` JSON error instead of the file on a
+  PIN-protected till. A plain download link cannot send the session token, so exports now go through
+  the API client. Bills, products and day-by-day exports all work again.
 
 ### Handover photos
 

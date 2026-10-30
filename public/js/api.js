@@ -248,8 +248,25 @@ export const getDailyStats = () => request('/api/stats/daily');
 /* Reports over a date range: what sold, what it earned, day by day. Dates are YYMMDD. */
 export const getRangeStats = (from, to) => request(`/api/stats/range?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
 
-// A plain link, not a fetch: the browser handles the download and its own "save as" dialog.
 export const exportUrl = (kind, from, to) => `/api/export/${kind}.csv?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+
+export async function downloadExport(kind, from, to) {
+  const token = getToken();
+  const res = await fetch(exportUrl(kind, from, to), {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+    cache: 'no-store'
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && data?.needsPin) { setToken(''); needPin(); }
+    const err = new Error(data.error || `Download failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  const disposition = res.headers.get('content-disposition') || '';
+  const name = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `${kind}-${from}-${to}.csv`;
+  return { blob: await res.blob(), filename: name };
+}
 
 /* AI (Gemini / OpenRouter). The key is typed here and stored on the server; publicView() strips it, so
  * the browser only ever learns `configured`/`provider`/`model`, never the key itself. An empty apiKey
@@ -280,3 +297,16 @@ export const saveVoiceConfig = (cfg) => post('/api/voice/config', cfg);
 export const getLicense = () => request('/api/license');
 export const saveLicenseKey = (key) => post('/api/license/key', { key });
 export const clearLicenseKey = () => post('/api/license/clear');
+
+/* Payment watcher (Android companion app → server → auto-confirm UPI).
+ * registerPendingPayment() is called when the receipt QR is shown so the server knows which bill
+ * to confirm when the Android app fires a signal. cancelPendingPayment() is called when the dialog
+ * closes without a signal (cash, manual UPI, or the cashier pressed Back). */
+export const registerPendingPayment  = (id, total) => put('/api/payment-signal/pending', { id, total });
+export const cancelPendingPayment    = (id)        => del(`/api/payment-signal/pending/${encodeURIComponent(id)}`);
+
+/* Over-the-air updates. The check is cheap and cached by the server for an hour; `force` asks GitHub
+ * again, which the Settings screen does when the shopkeeper presses the button. */
+export const getUpdateStatus = () => request('/api/update/status');
+export const checkForUpdate = (force = false) => request(`/api/update/check${force ? '?force=1' : ''}`);
+export const installUpdate = (version) => post('/api/update/install', { version });

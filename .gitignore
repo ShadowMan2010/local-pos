@@ -8,6 +8,12 @@ pos.log
 # Stale: predates the current setup flow, so it would just mislead. Regenerate before tracking it.
 SETUP-GUIDE.pdf
 
+# Runtime state written by the updater (see updater.js). It belongs to this install, not the source.
+.update-state.json
+.previous-version/
+.update-staging/
+.failed-version/
+
 # Firebase CLI cache
 .firebase/
 

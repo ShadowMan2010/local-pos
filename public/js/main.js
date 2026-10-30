@@ -6,6 +6,7 @@ import { cacheConfig, loadCachedConfig } from './store.js';
 import { renderSetupWizard } from './components/setup-wizard.js';
 import { renderDashboard } from './components/dashboard.js';
 import { pinIsSet, hasValidSession, showPinGate, initPinGate, hidePinGate } from './pin-gate.js';
+import './admin-bus.js'; // establishes the /ws-admin WebSocket used by payment-watcher and other live events
 
 const root = document.getElementById('app');
 let rendered = false;

@@ -82,6 +82,7 @@ test('only reads and device actions are public, and the method decides', () => {
   assert.ok(isPublic('POST', '/api/auth/pin'), 'that is how you hand over the PIN');
   assert.ok(isPublic('POST', '/api/weigh/tickets'), 'the scale creates tickets on its own');
   assert.ok(isPublic('GET', '/api/whatsapp/status'), 'a till can show connection state');
+  assert.ok(isPublic('POST', '/api/payment-signal'), 'the phone watcher has no PIN and proves itself with a shared secret');
 
   // The reason the list is keyed by method: the same path also serves a write.
   assert.ok(!isPublic('POST', '/api/products'), 'but creating a product is not public');
@@ -180,6 +181,34 @@ t('a UPI ID set while locked cannot be changed by a passer-by', async ({ call, d
   // asking the same refused endpoint to confirm it would just assert the refusal twice.
   const config = JSON.parse(fs.readFileSync(path.join(data, 'config.json'), 'utf8'));
   assert.equal(config.upiVpa, 'real@bank', 'the money still goes to the shop that owns it');
+});
+
+t('the payment watcher proves itself with the shared secret and only closes an open bill', async ({ call }) => {
+  const setup = await call('POST', '/api/setup', {
+    storeName: 'Corner Store', upiVpa: 'shop@bank', pin: '4821', paymentWatcherSecret: 'phone-secret-123'
+  });
+  assert.equal(setup.status, 200);
+  assert.equal(setup.json.config.paymentWatcherSet, true, 'the shop is told a secret is set');
+  assert.equal(setup.json.config.paymentWatcherSecret, undefined, 'but the secret never reaches the browser');
+  const token = setup.json.token;
+
+  // The Android watcher has no PIN, so the route is public. That is only safe because the secret is
+  // checked and because the signal cannot create a bill, only close one that is already open.
+  assert.equal((await call('POST', '/api/payment-signal', { secret: 'wrong-secret', amount: 250.5 })).status, 403);
+  const unmatched = await call('POST', '/api/payment-signal', { secret: 'phone-secret-123', amount: 250.5 });
+  assert.equal(unmatched.json.ok, false, 'a payment with no open bill confirms nothing');
+
+  assert.equal((await call('PUT', '/api/payment-signal/pending', { id: 'ord-1', total: 250.5 }, token)).status, 200);
+  const hit = await call('POST', '/api/payment-signal', { secret: 'phone-secret-123', amount: 250.5, source: 'Kotak 811' });
+  assert.equal(hit.status, 200);
+  assert.equal(hit.json.ok, true, 'the open bill is matched by its amount');
+  assert.equal(hit.json.id, 'ord-1');
+  assert.equal((await call('POST', '/api/payment-signal', { secret: 'phone-secret-123', amount: 250.5 })).json.ok, false,
+    'a duplicate notification cannot confirm the same bill twice');
+
+  // Saving the shop's details again must not quietly delete the secret.
+  const resaved = await call('POST', '/api/setup', { storeName: 'Corner Store', upiVpa: 'shop@bank' }, token);
+  assert.equal(resaved.json.config.paymentWatcherSet, true, 'the secret survives a normal settings save');
 });
 
 t('brute-forcing the PIN runs out of guesses', async ({ call }) => {

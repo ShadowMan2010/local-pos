@@ -7,13 +7,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const PORT = 3199;
 const DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'pos-name-'));
 let pass = 0, fail = 0;
 const ok = (cond, label) => { cond ? pass++ : fail++; console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${label}`); };
 
 const server = spawn('node', ['server.js'], {
-  cwd: '/home/dhruba/m3-pos',
+  cwd: ROOT,
   env: { ...process.env, PORT: String(PORT), POS_DATA_DIR: DATA, POS_NO_WHATSAPP: '1' },
   stdio: ['ignore', 'pipe', 'pipe']
 });
@@ -55,7 +56,7 @@ try {
   ok(lookup.json?.customer?.name === 'Rahim Uddin', 'the charged name is on the customer record');
 
   // The behaviour the bot depends on, exercised through the same helper the WhatsApp context uses.
-  const src = fs.readFileSync('/home/dhruba/m3-pos/server.js', 'utf8');
+  const src = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
   ok(/knownName: \(phone\) =>/.test(src), 'the WhatsApp context exposes knownName');
   ok(/customers\[key\]\?\.name/.test(src), 'knownName reads the saved customer name');
 
@@ -77,7 +78,7 @@ try {
   ok((anonLookup.json?.customer?.name || '') === '', 'a customer charged without a name has no name on file');
 
   // The name-correction command must be conservative: a typo must never become a name.
-  const bot = await import('/home/dhruba/m3-pos/whatsapp-bot.js');
+  const bot = await import(path.join(ROOT, 'whatsapp-bot.js'));
   ok(bot.parseNameCommand('name Rahim')?.name === 'Rahim', '"name Rahim" is understood');
   ok(bot.parseNameCommand('change name to Rahim Uddin')?.name === 'Rahim Uddin', '"change name to ..." is understood');
   ok(bot.parseNameCommand('my name is Rahim')?.name === 'Rahim', '"my name is ..." is understood');

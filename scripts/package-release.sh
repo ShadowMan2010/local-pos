@@ -46,9 +46,18 @@ if [ -d "$DIR/data" ] || [ -d "$DIR/node_modules" ]; then
   exit 1
 fi
 # Without these the archive extracts to something that cannot be installed or started.
-for must in package.json server.js; do
+for must in package.json server.js updater.js launcher/launcher.mjs; do
   if [ ! -f "$DIR/$must" ]; then
     echo "FAIL: $must is missing from the archive — it would not run" >&2
+    exit 1
+  fi
+done
+# Every server module must ride along, or the release boots into a missing import. This caught the
+# updater itself being left out of the 0.2.0 file list, which would have made every update fail.
+for js in "$ROOT"/*.js; do
+  base=$(basename "$js")
+  if [ ! -f "$DIR/$base" ]; then
+    echo "FAIL: $base is missing from the archive — the server imports it" >&2
     exit 1
   fi
 done

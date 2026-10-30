@@ -12,7 +12,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = '/home/dhruba/m3-pos';
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
 /** Every block comment in a file, as [startLine, endLine] with endLine null if never closed. */
 function blockComments(src) {

@@ -10,7 +10,7 @@ import {
   mentionsComplaint, complaintDetail, buildComplaintPromptText, buildComplaintSavedText
 } from '../whatsapp-bot.js';
 
-const ROOT = '/home/dhruba/m3-pos';
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 
 // ---------- the wording helpers, which need no server ----------
 

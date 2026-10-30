@@ -153,6 +153,8 @@ export function tryPin(req, pin, stored) {
 //     all. Deliberately just those two: /api/auth/change-pin must NOT be reachable without a token.
 //   - POST /api/weigh/tickets: the scale creates a ticket. It holds no money and is spent once.
 //   - GET /api/whatsapp/status: whether the shop is connected, so a till can say so.
+//   - POST /api/payment-signal: the Android payment watcher has no PIN. It proves itself with the
+//     shop's shared secret instead, and can only close a bill that is already open on the till.
 //
 // The method is part of each rule, not just the path. That distinction is the whole reason this is a
 // table and not a list of paths: /api/products serves both the device-readable list on GET and product
@@ -166,7 +168,8 @@ const PUBLIC = [
   ['POST', /^\/api\/auth\/pin$/],
   ['GET', /^\/api\/auth\/status$/],
   ['POST', /^\/api\/weigh\/tickets$/],
-  ['GET', /^\/api\/whatsapp\/status$/]
+  ['GET', /^\/api\/whatsapp\/status$/],
+  ['POST', /^\/api\/payment-signal$/]
 ];
 
 /** True when this exact method-and-path is one of the few things a device without a PIN may do. */

@@ -11,7 +11,9 @@
 import { loadPuppeteer, launchBrowser, killPort } from './browser.mjs';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 
+const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const puppeteer = await loadPuppeteer();
 
 const PORT = 3207;
@@ -31,7 +33,7 @@ async function startServer() {
   fs.rmSync(DIR, { recursive: true, force: true });
   fs.mkdirSync(DIR, { recursive: true });
   srv = spawn('node', ['server.js'], {
-    cwd: '/home/dhruba/m3-pos',
+    cwd: ROOT,
     env: { ...process.env, PORT: String(PORT), POS_DATA_DIR: DIR, POS_NO_WHATSAPP: '1' },
     stdio: ['ignore', 'pipe', 'pipe']
   });

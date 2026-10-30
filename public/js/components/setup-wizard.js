@@ -1,7 +1,7 @@
 // Module 1 — first-time configuration form (also used for Settings -> edit).
 import { h, icon, snack, qrDataUrl, runBusy, busy, copyText } from '../ui.js';
 import * as sfx from '../sfx.js';
-import { saveSetup, changePin, getConfig, getWhatsappStatus, whatsappUnlink, whatsappRelink, whatsappToggle, listDeliveryBoys, addDeliveryBoy, removeDeliveryBoy, getAuthStatus, beginTwoFactor, confirmTwoFactor, disableTwoFactor, newBackupCodes, getAiStatus, saveAiConfig, clearAiConfig, getVoiceStatus, saveVoiceConfig, getLicense, saveLicenseKey, clearLicenseKey } from '../api.js';
+import { saveSetup, changePin, getConfig, getWhatsappStatus, whatsappUnlink, whatsappRelink, whatsappToggle, listDeliveryBoys, addDeliveryBoy, removeDeliveryBoy, getAuthStatus, beginTwoFactor, confirmTwoFactor, disableTwoFactor, newBackupCodes, getAiStatus, saveAiConfig, clearAiConfig, getVoiceStatus, saveVoiceConfig, getLicense, saveLicenseKey, clearLicenseKey, getUpdateStatus, checkForUpdate, installUpdate } from '../api.js';
 import { cacheConfig } from '../store.js';
 
 function field({ name, label, value = '', type = 'text', placeholder, hint, required, full, inputmode }) {
@@ -305,6 +305,83 @@ function licenseSection() {
     benefits,
     keyField,
     h('div', { class: 'ai-actions' }, saveBtn, clearBtn));
+}
+
+function updateSection() {
+  const statusText = h('p', { class: 'body-m muted' }, 'Checking the installed version…');
+  const notesEl = h('div', { class: 'body-s muted', style: 'white-space:pre-wrap;max-height:240px;overflow:auto;margin-top:8px' });
+  const checkBtn = h('button', { type: 'button', class: 'btn btn-outlined' }, icon('refresh'), ' Check for updates');
+  const installBtn = h('button', { type: 'button', class: 'btn btn-filled', hidden: true }, icon('system_update'), ' Update now');
+  let latest = null;
+
+  async function paint() {
+    try {
+      const s = await getUpdateStatus();
+      statusText.textContent = `Running version ${s.current}${s.pendingVersion ? ` · version ${s.pendingVersion} is waiting to be installed` : ''}.`;
+    } catch (err) {
+      statusText.textContent = err.message;
+    }
+  }
+
+  async function waitForRestart(version) {
+    const deadline = Date.now() + 90000;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        const s = await getUpdateStatus();
+        if (s.current === version) {
+          statusText.textContent = `Updated to ${version}. Reloading…`;
+          location.reload();
+          return;
+        }
+      } catch { /* the server is restarting */ }
+    }
+    statusText.textContent = 'The till did not come back after the update. Reload this page, and check the launcher log if it still does not start.';
+  }
+
+  async function check(force) {
+    await runBusy(checkBtn, async () => {
+      try {
+        const r = await checkForUpdate(force);
+        latest = r.updateAvailable ? r.latest : null;
+        installBtn.hidden = !r.updateAvailable;
+        if (r.error) {
+          statusText.textContent = r.error;
+          notesEl.textContent = '';
+          return;
+        }
+        statusText.textContent = r.updateAvailable
+          ? `Version ${r.latest} is available. You are running ${r.current}.`
+          : `You are up to date on version ${r.current}.`;
+        notesEl.textContent = r.updateAvailable ? (r.notes || '') : '';
+      } catch (err) {
+        statusText.textContent = err.message;
+      }
+    });
+  }
+  checkBtn.onclick = () => check(true);
+  check(false);
+
+  installBtn.onclick = async () => {
+    if (!latest) return;
+    if (!confirm(`Update to version ${latest}? The till will restart, which takes a few seconds. Finish any bill on screen first.`)) return;
+    await runBusy(installBtn, async () => {
+      statusText.textContent = `Downloading version ${latest}…`;
+      notesEl.textContent = '';
+      try {
+        const r = await installUpdate(latest);
+        statusText.textContent = `Version ${r.installed || latest} is installed. Restarting…`;
+        await waitForRestart(r.installed || latest);
+      } catch (err) {
+        statusText.textContent = `Update failed: ${err.message}`;
+      }
+    });
+  };
+
+  paint();
+  return section('system_update', 'Updates', 'Install a newer version without replacing files by hand. Shop data, products and bills are never touched by an update.',
+    statusText, notesEl,
+    h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap;margin-top:12px' }, checkBtn, installBtn));
 }
 
 // Settings-only: shows the WhatsApp connection status, and the pairing QR code when it needs one.
@@ -769,6 +846,25 @@ const form = h('form', { class: 'setup-form', onsubmit: submit },
       })
     )),
 
+  section('notifications', 'Automatic UPI confirmation',
+    'The phone app that watches your payment messages sends a signal here, so the bill can close itself.',
+    h('div', { class: 'field-grid' },
+      h('div', { class: 'body-m muted', style: 'grid-column:1/-1' },
+        c.paymentWatcherSet
+          ? 'A shared secret is set. The phone app must send the same secret with each payment notification.'
+          : 'Not set up yet. Choose a secret here, then enter the same secret in the phone app. Without one, payment signals are refused.'),
+      field({
+        name: 'paymentWatcherSecret', label: 'Shared secret', type: 'password', full: true,
+        placeholder: c.paymentWatcherSet ? '(saved — leave empty to keep)' : 'At least 8 characters',
+        hint: 'Pick something long and not used anywhere else. It is stored on this machine and never sent back to the browser.'
+      }),
+      c.paymentWatcherSet
+        ? h('label', { class: 'm3-check-row' },
+            h('input', { type: 'checkbox', name: 'clearPaymentWatcher', class: 'm3-check' }),
+            h('span', {}, 'Remove the saved secret and stop accepting payment signals'))
+        : null
+    )),
+
   section('qr_code_2', 'Payment QR display', 'Where should the customer see the payment QR?',
     h('div', { class: 'choice-list' },
       choice('receipt', 'Print QR code directly on thermal bill receipt', 'The QR sits under the totals on the printed bill.'),
@@ -847,6 +943,7 @@ root.replaceChildren(
     existing && aiSection(),
     existing && voiceSection(),
     existing && licenseSection(),
+    existing && updateSection(),
     existing && whatsappSection(),
     existing && deliveryBoySection())
 );
@@ -864,7 +961,9 @@ async function submit(e) {
     storeName: t('storeName'), address: t('address'), phone: t('phone'),
     upiVpa: t('upiVpa'),
     qrMode: t('qrMode') || 'receipt',
-    displayUrl: t('displayUrl')
+    displayUrl: t('displayUrl'),
+    paymentWatcherSecret: t('paymentWatcherSecret'),
+    clearPaymentWatcher: Boolean(v.clearPaymentWatcher)
   };
   // Only sent when a new PIN is actually being set. Once one exists the server ignores this field, so
   // sending an empty string every time would be harmless but misleading to read later.

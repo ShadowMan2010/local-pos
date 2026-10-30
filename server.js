@@ -42,6 +42,9 @@ import {
   // Pro licensing. Core features never touch this; only the paid ones do, and the check is a local
   // signature test with no network call (see license.js for why that matters to a shop).
   import { hasFeature, requireFeature, getLicenseInfo, setLicenseKey, clearLicense, VENDOR_CONTACT } from './license.js';
+  // Over-the-air updates. Only published GitHub releases are offered; the download is unpacked and
+  // checked before anything is replaced, and the running version is kept for the automatic rollback.
+  import { checkForUpdate, downloadUpdate, installUpdate, keepPreviousVersion, stagePending, updateStatus, recordUpdateCheck, markHealthy } from './updater.js';
 
 // Pure text/parsing helpers only — no Baileys — so this is safe to import even when WhatsApp is off.
 import { buildPackedText, buildOutForDeliveryText, buildDeliveredText, buildDeliveryJobText, buildNewCodeText, buildDeliveryOkText, buildDeliveryBadCodeText, buildDeliveryAlreadyText, buildDeliveryLockedText, buildDeliveryBadQrText, buildPickupOkText, buildPickupAlreadyText, buildNotPickedUpText, buildDeliveryDeclinedText, buildDeliveryBoyNothingToDeclineText, buildAnnouncementText, announcementRecipients } from './whatsapp-bot.js';
@@ -152,13 +155,14 @@ function publicView(cfg) {
   //   ai       — the API key must not leave this machine; only the aiEnabled flag goes out
   //   voice    — the local Whisper URL/key must not leave this machine either; only voiceEnabled goes out
   //   pin      — the salted hash. Sending it would let anybody offline-crack the PIN from a till.
-  const { firebase, ai, voice, pin, ...rest } = cfg;
+  const { firebase, ai, voice, pin, paymentWatcherSecret, ...rest } = cfg;
   return {
     ...rest,
     canImportFirebase: Boolean(firebase?.apiKey && firebase?.projectId),
     aiEnabled: Boolean(ai?.apiKey),
     voiceEnabled: voice?.enabled === true,
-    pinSet: Boolean(pin?.hash)
+    pinSet: Boolean(pin?.hash),
+    paymentWatcherSet: Boolean(paymentWatcherSecret)
   };
 }
 
@@ -347,6 +351,10 @@ app.post('/api/setup', (req, res) => {
   if (upiVpa && !/^[\w.\-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/.test(upiVpa)) {
     return bad(res, 'That UPI ID does not look right. It should be like shopname@bank');
   }
+  const watcherSecret = str(b.paymentWatcherSecret, 128);
+  if (watcherSecret && watcherSecret.length < 8) {
+    return bad(res, 'Use at least 8 characters for the payment-watcher secret');
+  }
   const prev = readConfig() || {};
   const cfg = {
     storeName: str(b.storeName, 80),
@@ -370,6 +378,9 @@ app.post('/api/setup', (req, res) => {
   // reopen every protected route) and cannot overwrite it either — changing it goes through
   // /api/auth/change-pin, which signs the other tills out.
   if (prev.pin) cfg.pin = prev.pin;
+  if (prev.paymentWatcherSecret) cfg.paymentWatcherSecret = prev.paymentWatcherSecret;
+  if (b.clearPaymentWatcher) delete cfg.paymentWatcherSecret;
+  else if (watcherSecret) cfg.paymentWatcherSecret = watcherSecret;
 
   // A PIN offered during setup is applied here, and only if there is not one already. This is the
   // first-run path: /api/setup is reachable without a PIN only until one exists, so this is the one
@@ -2229,6 +2240,130 @@ app.post('/api/ai/read-slip', licenseGate('ai_scan'), readAiImageBody, async (re
   res.json({ slip });
 });
 
+/* ---------- UPI auto-confirm via Android payment watcher ---------- */
+// The Android companion app sends this when it catches a payment notification from a bank/UPI app
+// (e.g. Kotak 811 email alert). The server matches the amount to the most recently opened receipt
+// on the till, then pushes a `upi-auto-confirmed` WebSocket event so the receipt dialog can
+// auto-press "UPI received" without the cashier touching anything.
+//
+// Security note: this endpoint is intentionally PIN-free. The phone is on the local LAN and the
+// action it triggers — auto-pressing a button the cashier would press anyway — cannot charge a bill
+// on its own; the receipt dialog that receives the signal still calls POST /api/orders normally.
+// A shared secret (set in Settings → Payment watcher) prevents random LAN devices from firing
+// spurious confirmations. If no secret is set the endpoint is disabled entirely.
+
+// In-flight bills: receipt-dialog.js calls PUT /api/payment-signal/pending when it opens the QR,
+// and we match incoming signals against those records.
+const pendingPayments = new Map(); // key: round2(total), value: {id, total, openedAt}
+
+app.put('/api/payment-signal/pending', (req, res) => {
+  const b = req.body || {};
+  const id   = String(b.id   || '').trim();
+  const total = round2(Number(b.total));
+  if (!id || !Number.isFinite(total) || total <= 0) return bad(res, 'id and total are required');
+  // One entry per distinct amount; last writer wins (the most recently opened bill for that amount
+  // is the one we want to confirm — a duplicate amount on an older bill is already past).
+  pendingPayments.set(total, { id, total, openedAt: Date.now() });
+  // Expire stale entries older than 30 minutes so the map does not grow forever.
+  const cutoff = Date.now() - 30 * 60 * 1000;
+  for (const [k, v] of pendingPayments) if (v.openedAt < cutoff) pendingPayments.delete(k);
+  res.json({ ok: true });
+});
+
+app.delete('/api/payment-signal/pending/:id', (req, res) => {
+  const id = String(req.params.id || '').trim();
+  for (const [k, v] of pendingPayments) if (v.id === id) { pendingPayments.delete(k); break; }
+  res.json({ ok: true });
+});
+
+app.post('/api/payment-signal', (req, res) => {
+  const cfg = readConfig();
+  const secret = cfg?.paymentWatcherSecret;
+  // If the shop has not configured a secret, refuse all signals to prevent open abuse.
+  if (!secret) return bad(res, 'Payment watcher is not set up. Add a shared secret in Settings → Payment watcher.', 403);
+
+  const b = req.body || {};
+  const incoming = String(b.secret || '').trim();
+  if (!incoming || incoming !== secret) return bad(res, 'Wrong shared secret', 403);
+
+  const amount = round2(Number(b.amount));
+  if (!Number.isFinite(amount) || amount <= 0) return bad(res, 'amount must be a positive number');
+
+  const source = String(b.source || 'bank').trim().slice(0, 60); // e.g. "Kotak 811"
+  const ref    = String(b.ref    || '').trim().slice(0, 80);     // bank reference / last 4 digits
+
+  const match = pendingPayments.get(amount);
+  if (!match) {
+    // No open bill for that exact amount — could be a stale notification or a different transaction.
+    res.json({ ok: false, reason: 'no_pending_bill' });
+    return;
+  }
+
+  // Remove so a second notification for the same amount (e.g. a duplicate email) is ignored.
+  pendingPayments.delete(amount);
+
+  broadcastAdmin({ type: 'upi-auto-confirmed', id: match.id, amount, source, ref });
+  console.log(`[payment-watcher] auto-confirmed ₹${amount} for ${match.id} via ${source}${ref ? ` ref ${ref}` : ''}`);
+  res.json({ ok: true, id: match.id, amount });
+});
+
+/* ---------- over-the-air updates ---------- */
+let updateCheckCache = null;
+let updateInFlight = false;
+
+async function latestRelease({ force = false } = {}) {
+  if (!force && updateCheckCache && Date.now() - updateCheckCache.at < 60 * 60 * 1000) {
+    return updateCheckCache.result;
+  }
+  const result = await checkForUpdate();
+  if (!result.error) {
+    updateCheckCache = { at: Date.now(), result };
+    recordUpdateCheck();
+  }
+  return result;
+}
+
+app.get('/api/update/status', (_req, res) => res.json(updateStatus()));
+
+app.get('/api/update/check', async (req, res) => {
+  try {
+    res.json(await latestRelease({ force: req.query.force === '1' }));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+app.post('/api/update/install', async (req, res) => {
+  if (updateInFlight) return res.status(409).json({ error: 'An update is already being installed' });
+  updateInFlight = true;
+  try {
+    const wanted = String(req.body?.version || '').trim();
+    const check = await latestRelease({ force: true });
+    if (check.error) return res.status(502).json({ error: check.error });
+    if (!check.updateAvailable) return res.status(409).json({ error: 'There is no newer release to install' });
+    if (wanted && wanted !== check.latest) {
+      return res.status(409).json({ error: 'That release is no longer the newest one. Check again.' });
+    }
+    if (!check.asset) return res.status(502).json({ error: 'The newest release has no downloadable file attached' });
+
+    const downloaded = await downloadUpdate({
+      version: check.latest,
+      asset: check.asset,
+      expectedSize: check.asset.size
+    });
+    keepPreviousVersion();
+    stagePending(check.latest);
+    const installed = installUpdate({ restart: true });
+    console.log(`[update] installing ${check.latest} (${downloaded.bytes} bytes)`);
+    res.json({ ok: true, latest: check.latest, notes: check.notes, ...downloaded, ...installed });
+  } catch (err) {
+    console.error('[update] install failed:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    updateInFlight = false;
+  }
+});
+
 /* ---------- delivery proof photos ---------- */
 app.use('/delivery-photos', express.static(PROOF_DIR, { maxAge: '30d', immutable: true }));
 
@@ -2835,6 +2970,7 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
+  if (process.env.INVOCATION_ID) markHealthy();
   const addrs = lanAddresses();
   console.log(`LOCAL POS running on http://localhost:${PORT} (this machine only)`);
   if (addrs.length) {

@@ -1,6 +1,6 @@
 {
   "name": "local-pos",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Material 3 Web POS with UPI QR, thermal receipts, customer tracking and a Raspberry Pi customer display; all data stored locally",
@@ -40,13 +40,28 @@
   },
   "files": [
     "server.js",
+    "ai.js",
+    "audit.js",
+    "auth.js",
+    "catalog-ai.js",
+    "complaint-ai.js",
+    "complaint-conversation.js",
+    "license.js",
+    "qr-reader.js",
     "stats.js",
+    "totp.js",
+    "two-factor.js",
+    "updater.js",
+    "voice-ai.js",
     "whatsapp.js",
     "whatsapp-bill.js",
     "whatsapp-bot.js",
+    "launcher/",
     "public/",
     "scripts/",
+    "tools/make-license.mjs",
     "README.md",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSING.md"
   ]
 }

@@ -3,7 +3,7 @@
 // This is deliberately separate from Today's sales. That dialog is a close-of-day glance with
 // achievements and a stock check; this one is a book-keeping screen that gets exported, and mixing
 // the two would bury the numbers the owner came to read.
-import { h, icon, iconBtn, money, snack } from '../ui.js';
+import { h, icon, iconBtn, money, snack, runBusy } from '../ui.js';
 import * as api from '../api.js';
 
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -49,10 +49,30 @@ export function openReportsDialog() {
   };
   for (const el of [fromInput, toInput]) el.addEventListener('change', apply);
 
+  const saveExport = async (btn, kind, label) => {
+    await runBusy(btn, async () => {
+      try {
+        const { blob, filename } = await api.downloadExport(kind, range.from, range.to);
+        const url = URL.createObjectURL(blob);
+        const a = h('a', { href: url, download: filename });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        snack(`${label} downloaded`, 2400, 'success');
+      } catch (err) {
+        snack(err.message, 5000, 'error');
+      }
+    });
+  };
+
   const exportBar = h('div', { class: 'reports-exports' },
     h('span', { class: 'body-s muted' }, 'Download:'),
     ...[['orders', 'Bills'], ['products', 'Products'], ['days', 'Day by day']].map(([kind, label]) =>
-      h('a', { class: 'btn btn-tonal', href: api.exportUrl(kind, range.from, range.to), download: '' }, icon('download'), label)));
+      h('button', {
+        type: 'button', class: 'btn btn-tonal',
+        onclick: (e) => saveExport(e.currentTarget, kind, label)
+      }, icon('download'), label)));
 
   dlg.append(
     h('div', { class: 'dlg-head' },
@@ -82,13 +102,6 @@ export function openReportsDialog() {
   }
 
   function render(r) {
-    // The export links carry the range in their href, so they have to be rewritten after a
-    // range change or the download would silently be for the previous dates.
-    for (const a of exportBar.querySelectorAll('a')) {
-      const kind = a.getAttribute('href').match(/\/api\/export\/(\w+)\.csv/)?.[1];
-      if (kind) a.setAttribute('href', api.exportUrl(kind, r.from, r.to));
-    }
-
     const parts = [];
     const dayWord = r.overall.billCount === 1 ? 'bill' : 'bills';
     parts.push(h('div', { class: 'daily-hero' },
