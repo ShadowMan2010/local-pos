@@ -4,6 +4,16 @@ All notable changes to LOCAL POS are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] — 2026-10-30
+
+### Fixed
+
+- The top bar now wraps instead of pushing its last actions off the right edge. **Store settings**,
+  and the cart on a phone, were unreachable on laptop, tablet and phone windows narrower than about
+  920px. Every action stays on screen and the dashboard fills the height that is left.
+- Added a UI regression test that checks Store settings and the cart stay inside the viewport from
+  390px to 1100px, and that Settings really opens at the smallest width.
+
 ## [0.3.0] — 2026-10-30
 
 ### Automatic UPI confirmation
