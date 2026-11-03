@@ -1959,7 +1959,7 @@ app.get('/api/export/:kind.csv', (req, res) => {
   const suffix = `${from}-${to}`;
   switch (req.params.kind) {
     case 'orders':
-      return sendCsv(res, `bills-${suffix}.csv`, buildOrdersCsv(picked));
+      return sendCsv(res, `bills-${suffix}.csv`, buildOrdersCsv(picked, TZ));
     case 'products': {
       const items = computeDailyStats(picked).items;
       return sendCsv(res, `product-sales-${suffix}.csv`, buildProductsCsv(items));

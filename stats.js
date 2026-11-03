@@ -134,23 +134,30 @@ export function toCsv(rows) {
   return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
 
-/** One row per bill, newest first. */
-export function buildOrdersCsv(orders) {
+/** One row per bill, newest first. Date and time are in the shop's timezone, like every other report. */
+export function buildOrdersCsv(orders, tz = 'Asia/Kolkata') {
   const rows = [[
     'Bill', 'Date', 'Time', 'Customer', 'Phone', 'Items', 'Subtotal', 'Discount', 'Total',
     'Payment', 'Delivery status', 'Delivered by', 'Visit no.'
   ]];
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  });
   const sorted = [...orders].sort((a, b) => String(b.id).localeCompare(String(a.id)));
   for (const o of sorted) {
     const when = new Date(o.paidAt || o.createdAt);
     if (Number.isNaN(when.getTime())) continue;
+    const parts = formatter.formatToParts(when);
+    const part = (type) => parts.find((p) => p.type === type)?.value || '';
     const itemText = (o.items || [])
       .map((it) => `${it.name} x${it.weightKg != null ? it.weightKg + 'kg' : it.qty}`)
       .join('; ');
     rows.push([
       o.id,
-      when.toISOString().slice(0, 10),
-      when.toISOString().slice(11, 16),
+      `${part('year')}-${part('month')}-${part('day')}`,
+      `${part('hour')}:${part('minute')}`,
       o.customer?.name || '',
       o.customer?.phone || '',
       itemText,
